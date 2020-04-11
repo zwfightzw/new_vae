@@ -248,7 +248,7 @@ if __name__ == '__main__':
     sprites_test = Sprites('./dataset/lpc-dataset/test/', 873)
     trainloader = torch.utils.data.DataLoader(sprites_train, batch_size=64, shuffle=True, num_workers=4)
     testloader = torch.utils.data.DataLoader(sprites_test, batch_size=1, shuffle=True, num_workers=4)
-    device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     trainer = Trainer(vae, device, sprites_train, sprites_test, trainloader, testloader, epochs=100, batch_size=64,
                       learning_rate=0.0002, checkpoints='vanilla-disentangled-vae.model', nsamples=2,
                       sample_path='samples',
