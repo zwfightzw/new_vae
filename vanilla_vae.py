@@ -222,8 +222,8 @@ class Trainer(object):
             for i, data in enumerate(self.trainloader, 1):
                 data = data.to(device)
                 self.optimizer.zero_grad()
-                f_mean, f_logvar, f, z_mean, z_logvar, z, recon_x = self.model(data)
-                loss = loss_fn(data, recon_x, f_mean, f_logvar, z_mean, z_logvar)
+                z_mean, z_logvar, z, recon_x = self.model(data)
+                loss = loss_fn(data, recon_x, z_mean, z_logvar)
                 loss.backward()
                 self.optimizer.step()
                 losses.append(loss.item())
