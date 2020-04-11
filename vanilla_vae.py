@@ -184,7 +184,7 @@ class Trainer(object):
 
     def recon_frame(self, epoch, original):
         with torch.no_grad():
-            _, _, _, _, _, _, recon = self.model(original)
+            _, _, _, recon = self.model(original)
             image = torch.cat((original, recon), dim=0)
             print(image.shape)
             image = image.view(16, 3, 64, 64)
