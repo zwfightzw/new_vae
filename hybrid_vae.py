@@ -256,7 +256,7 @@ class Trainer(object):
         with torch.no_grad():
             each_block_size = self.model.z_dim // self.model.block_size
             zt_dec = []
-            zt_1 = torch.zeros(2, self.model.z_dim).to(device)
+            zt_1 = torch.zeros(self.samples, self.model.z_dim).to(device)
             zt_dec.append(zt_1)
             for t in range(1, 8):
 
@@ -265,9 +265,9 @@ class Trainer(object):
                 wt = cumsoftmax(wt)
                 # posterior over ct, q(ct|ot,ft)
 
-                c_fwd = torch.zeros(1, each_block_size).to(device)
-                ct_mean = torch.zeros(1, self.model.z_dim).to(device)
-                ct_lar = torch.zeros(1, self.model.z_dim).to(device)
+                c_fwd = torch.zeros(self.samples, each_block_size).to(device)
+                ct_mean = torch.zeros(self.samples, self.model.z_dim).to(device)
+                ct_lar = torch.zeros(self.samples, self.model.z_dim).to(device)
 
                 for fwd_t in range(self.model.block_size):
                     # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
