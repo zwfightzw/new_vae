@@ -11,20 +11,6 @@ from torch.distributions import Normal, kl_divergence
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-
-class RecurrentLayer(nn.Module):
-    def __init__(self,
-                 input_size,
-                 hidden_size):
-        super(RecurrentLayer, self).__init__()
-        # rnn cell
-        self.rnn_cell = nn.GRUCell(input_size=input_size,
-                                   hidden_size=hidden_size)
-
-    def forward(self, input_data, prev_state):
-        return self.rnn_cell(input_data, prev_state)
-
-
 class Sprites(torch.utils.data.Dataset):
     def __init__(self, path, size):
         self.path = path
@@ -57,7 +43,7 @@ class FullQDisentangledVAE(nn.Module):
         self.z_mean_prior = nn.Linear(self.z_dim//self.block_size, self.z_dim//self.block_size)
         self.z_logvar_prior = nn.Linear(self.z_dim//self.block_size, self.z_dim//self.block_size)
 
-        self.z_to_c_fwd = RecurrentLayer(input_size=self.z_dim//self.block_size,
+        self.z_to_c_fwd = nn.GRUCell(input_size=self.z_dim//self.block_size,
                                            hidden_size=self.z_dim//self.block_size)
 
         self.z_w_function = nn.Linear(self.z_dim, self.z_dim)
