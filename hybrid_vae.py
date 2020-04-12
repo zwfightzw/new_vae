@@ -11,6 +11,20 @@ from torch.distributions import Normal, kl_divergence
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
+
+class RecurrentLayer(nn.Module):
+    def __init__(self,
+                 input_size,
+                 hidden_size):
+        super(RecurrentLayer, self).__init__()
+        # rnn cell
+        self.rnn_cell = nn.GRUCell(input_size=input_size,
+                                   hidden_size=hidden_size)
+
+    def forward(self, input_data, prev_state):
+        return self.rnn_cell(input_data, prev_state)
+
+
 class Sprites(torch.utils.data.Dataset):
     def __init__(self, path, size):
         self.path = path
@@ -30,6 +44,7 @@ class FullQDisentangledVAE(nn.Module):
         self.frames = frames
         self.conv_dim = conv_dim
         self.hidden_dim = hidden_dim
+        self.block_size = 4
 
         self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim, 1,
                               bidirectional=True, batch_first=True)
@@ -38,6 +53,14 @@ class FullQDisentangledVAE(nn.Module):
         self.z_logvar = nn.Linear(self.hidden_dim, self.z_dim)
         self.z_mean_drop = nn.Dropout(0.3)
         self.z_logvar_drop = nn.Dropout(0.3)
+
+        self.z_mean_prior = nn.Linear(self.z_dim//self.block_size, self.z_dim//self.block_size)
+        self.z_logvar_prior = nn.Linear(self.z_dim//self.block_size, self.z_dim//self.block_size)
+
+        self.z_to_c_fwd = RecurrentLayer(input_size=self.z_dim//self.block_size,
+                                           hidden_size=self.z_dim//self.block_size)
+
+        self.z_w_function = nn.Linear(self.z_dim, self.z_dim)
 
         self.conv1 = nn.Conv2d(3, 256, kernel_size=4, stride=2, padding=1)
         self.conv2 = nn.Conv2d(256, 256, kernel_size=4, stride=2, padding=1)
@@ -110,27 +133,84 @@ class FullQDisentangledVAE(nn.Module):
     def encode_z(self, x):
         lstm_out, _ = self.z_lstm(x)
         rnn_out, _ = self.z_rnn(lstm_out)
-        mean = self.z_mean(self.z_mean_drop(rnn_out))
-        logvar = self.z_logvar(self.z_logvar_drop(rnn_out))
-        return mean, logvar, self.reparameterize(mean, logvar)
+
+        post_z_list = []
+        prior_z_lost = []
+        zt_obs_list = []
+        zt_1_mean = self.z_mean(self.z_mean_drop(rnn_out[:,0]))
+        zt_1_lar = self.z_logvar(self.z_logvar_drop(rnn_out[:,0]))
+        post_z_list.append(Normal(zt_1_mean, zt_1_lar))
+        prior_z0 = torch.distributions.Normal(torch.zeros(self.z_dim).to(device),
+                                              torch.ones(self.z_dim).to(device))
+
+        prior_z_lost.append(prior_z0)
+        # decode z0 observation
+        zt_1 = self.reparameterize(zt_1_mean, zt_1_lar)
+
+        zt_obs_list.append(zt_1)
+        batch_size = rnn_out.shape[0]
+        seq_size = rnn_out.shape[1]
+        each_block_size = self.z_dim // self.block_size
+
+        for t in range(1, seq_size):
+
+            # update weight, w0<...<wd<=1, d means block_size
+            wt = self.z_w_function(zt_1)
+            wt = cumsoftmax(wt)
+            # posterior over ct, q(ct|ot,ft)
+            ct_post_mean = self.z_mean(self.z_mean_drop(rnn_out[:, t]))
+            ct_post_lar = self.z_logvar(self.z_logvar_drop(rnn_out[:, t]))
+            post_z_list.append(Normal(ct_post_mean, ct_post_lar))
+
+            c_fwd = torch.zeros(batch_size, each_block_size)
+            ct_mean = torch.zeros(batch_size, self.z_dim)
+            ct_lar = torch.zeros(batch_size, self.z_dim)
+
+            for fwd_t in range(self.block_size):
+
+                # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
+                c_fwd = c_fwd = self.z_to_c_fwd(zt_1[:, fwd_t*each_block_size:(fwd_t+1)*each_block_size], c_fwd)
+                c_fwd_latent_mean = self.z_mean_prior(c_fwd)
+                c_fwd_latent_lar = self.z_logvar_prior(c_fwd)
+
+                ct_mean[:, fwd_t * each_block_size:(fwd_t + 1) * each_block_size] = c_fwd_latent_mean
+                ct_lar[:, fwd_t * each_block_size:(fwd_t + 1) * each_block_size] = c_fwd_latent_lar
+
+            # store the prior of ct_i
+            prior_z_lost.append(Normal(ct_mean, ct_lar))
+            ct = self.reparameterize(ct_mean, ct_lar)
+
+            zt = (1 - wt) * zt_1 + wt * ct
+            zt_obs_list.append(zt)
+            # decode observation
+            zt_1 = zt
+
+        zt_obs_list = torch.stack(zt_obs_list, dim=1)
+
+        return post_z_list, prior_z_lost, zt_obs_list
 
     def forward(self, x):
         conv_x = self.encode_frames(x)
-        z_mean, z_logvar, z = self.encode_z(conv_x)
+
+        post_zt, prior_zt, z = self.encode_z(conv_x)
         recon_x = self.decode_frames(z)
-        return z_mean, z_logvar, z, recon_x
+        return post_zt, prior_zt, z, recon_x
+
+def cumsoftmax(x, dim=-1):
+    return torch.cumsum(F.softmax(x, dim=dim), dim=dim)
 
 
-def loss_fn(original_seq, recon_seq, z_mean, z_logvar):
+def loss_fn(original_seq, recon_seq, post_z, prior_z):
     mse = F.mse_loss(recon_seq, original_seq, reduction='sum');
     #kld_z = -0.5 * torch.sum(1 + z_logvar - torch.pow(z_mean, 2) - torch.exp(z_logvar))
-    len = z_mean.shape[2]
 
-    z_mean = z_mean.view(-1, len)
-    z_logvar = z_logvar.view(-1, len)
-    prior_z0 = Normal(torch.zeros(len).to(device), torch.ones(len).to(device))
-
-    kld_z = kl_divergence(prior_z0, Normal(z_mean, z_logvar)).sum(-1)
+    # compute kl related to states, kl(q(ct|ot,ft)||p(ct|zt-1)) and kl(q(z0|f0)||N(0,1))
+    kl_z_list = []
+    for t in range(len(post_z)):
+        # kl divergences (sum over dimension)
+        kl_obs_state = kl_divergence(post_z[t], prior_z[t])
+        kl_z_list.append(kl_obs_state.sum(-1))
+    kld_z = torch.stack(kl_z_list, dim=1)
 
     return mse + kld_z.mean()
 
@@ -190,7 +270,7 @@ class Trainer(object):
         with torch.no_grad():
             recon_x = self.model.decode_frames(self.test_z)
             recon_x = recon_x.view(16, 3, 64, 64)
-            torchvision.utils.save_image(recon_x, './Vanilla/%s/epoch%d.png' % (self.sample_path, epoch))
+            torchvision.utils.save_image(recon_x, './Hybrid/%s/epoch%d.png' % (self.sample_path, epoch))
 
     def recon_frame(self, epoch, original):
         with torch.no_grad():
@@ -198,7 +278,7 @@ class Trainer(object):
             image = torch.cat((original, recon), dim=0)
             print(image.shape)
             image = image.view(16, 3, 64, 64)
-            torchvision.utils.save_image(image, './Vanilla/%s/epoch%d.png' % (self.recon_path, epoch))
+            torchvision.utils.save_image(image, './Hybrid/%s/epoch%d.png' % (self.recon_path, epoch))
     '''
     def style_transfer(self, epoch):
         with torch.no_grad():
@@ -216,12 +296,12 @@ class Trainer(object):
             image2swap_zf = torch.cat((image1_z, image2_f_expand), dim=2)
             image2_body_image1_motion = self.model.decode_frames(image2swap_zf)
             image2_body_image1_motion = torch.squeeze(image2_body_image1_motion, 0)
-            os.makedirs(os.path.dirname('./Vanilla/transfer/epoch%d/image1_body_image2_motion.png' % epoch),
+            os.makedirs(os.path.dirname('./Hybrid/transfer/epoch%d/image1_body_image2_motion.png' % epoch),
                         exist_ok=True)
             torchvision.utils.save_image(image1_body_image2_motion,
-                                         './Vanilla/transfer/epoch%d/image1_body_image2_motion.png' % epoch)
+                                         './Hybrid/transfer/epoch%d/image1_body_image2_motion.png' % epoch)
             torchvision.utils.save_image(image2_body_image1_motion,
-                                         './Vanilla/transfer/epoch%d/image2_body_image1_motion.png' % epoch)
+                                         './Hybrid/transfer/epoch%d/image2_body_image1_motion.png' % epoch)
     '''
 
     def train_model(self):
@@ -232,8 +312,8 @@ class Trainer(object):
             for i, data in enumerate(self.trainloader, 1):
                 data = data.to(device)
                 self.optimizer.zero_grad()
-                z_mean, z_logvar, z, recon_x = self.model(data)
-                loss = loss_fn(data, recon_x, z_mean, z_logvar)
+                post_z, prior_z, z, recon_x = self.model(data)
+                loss = loss_fn(data, recon_x, post_z, prior_z)
                 loss.backward()
                 self.optimizer.step()
                 losses.append(loss.item())
@@ -259,9 +339,8 @@ if __name__ == '__main__':
     trainloader = torch.utils.data.DataLoader(sprites_train, batch_size=64, shuffle=True, num_workers=4)
     testloader = torch.utils.data.DataLoader(sprites_test, batch_size=1, shuffle=True, num_workers=4)
 
-
     trainer = Trainer(vae, device, sprites_train, sprites_test, trainloader, testloader, epochs=100, batch_size=64,
-                      learning_rate=0.0002, checkpoints='./model/vanilla-disentangled-vae.model', nsamples=2,
+                      learning_rate=0.0002, checkpoints='./model/hybrid-disentangled-vae.model', nsamples=2,
                       sample_path='samples',
                       recon_path='recon')
     trainer.load_checkpoint()
