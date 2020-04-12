@@ -148,9 +148,9 @@ class FullQDisentangledVAE(nn.Module):
             ct_post_lar = self.z_logvar(self.z_logvar_drop(rnn_out[:, t]))
             post_z_list.append(Normal(ct_post_mean, ct_post_lar))
 
-            c_fwd = torch.zeros(batch_size, each_block_size)
-            ct_mean = torch.zeros(batch_size, self.z_dim)
-            ct_lar = torch.zeros(batch_size, self.z_dim)
+            c_fwd = torch.zeros(batch_size, each_block_size).to(device)
+            ct_mean = torch.zeros(batch_size, self.z_dim).to(device)
+            ct_lar = torch.zeros(batch_size, self.z_dim).to(device)
 
             for fwd_t in range(self.block_size):
 
