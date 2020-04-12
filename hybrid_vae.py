@@ -32,9 +32,8 @@ class FullQDisentangledVAE(nn.Module):
         self.hidden_dim = hidden_dim
         self.block_size = 4
 
-        self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim, 1,
+        self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim//2, 1,
                               bidirectional=True, batch_first=True)
-        self.z_rnn = nn.RNN(self.hidden_dim * 2, self.hidden_dim, batch_first=True)
         self.z_mean = nn.Linear(self.hidden_dim, self.z_dim)
         self.z_logvar = nn.Linear(self.hidden_dim, self.z_dim)
         self.z_mean_drop = nn.Dropout(0.3)
