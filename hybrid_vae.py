@@ -118,35 +118,37 @@ class FullQDisentangledVAE(nn.Module):
 
     def encode_z(self, x):
         lstm_out, _ = self.z_lstm(x)
-        rnn_out, _ = self.z_rnn(lstm_out)
 
         post_z_list = []
         prior_z_lost = []
         zt_obs_list = []
-        zt_1_mean = self.z_mean(self.z_mean_drop(rnn_out[:,0]))
-        zt_1_lar = self.z_logvar(self.z_logvar_drop(rnn_out[:,0]))
+        zt_1_mean = self.z_mean(self.z_mean_drop(lstm_out[:,0]))
+        zt_1_lar = self.z_logvar(self.z_logvar_drop(lstm_out[:,0]))
         post_z_list.append(Normal(zt_1_mean, zt_1_lar))
         prior_z0 = torch.distributions.Normal(torch.zeros(self.z_dim).to(device),
                                               torch.ones(self.z_dim).to(device))
 
         prior_z_lost.append(prior_z0)
         # decode z0 observation
-        zt_1 = self.reparameterize(zt_1_mean, zt_1_lar)
+        zt_1_dec = self.reparameterize(zt_1_mean, zt_1_lar)
 
-        zt_obs_list.append(zt_1)
-        batch_size = rnn_out.shape[0]
-        seq_size = rnn_out.shape[1]
+        zt_obs_list.append(zt_1_dec)
+        batch_size = lstm_out.shape[0]
+        seq_size = lstm_out.shape[1]
         each_block_size = self.z_dim // self.block_size
 
+        zt_1 = torch.zeros(batch_size, self.z_dim).to(device)
         for t in range(1, seq_size):
 
             # update weight, w0<...<wd<=1, d means block_size
             wt = self.z_w_function(zt_1)
             wt = cumsoftmax(wt)
             # posterior over ct, q(ct|ot,ft)
-            ct_post_mean = self.z_mean(self.z_mean_drop(rnn_out[:, t]))
-            ct_post_lar = self.z_logvar(self.z_logvar_drop(rnn_out[:, t]))
+            ct_post_mean = self.z_mean(self.z_mean_drop(lstm_out[:, t]))
+            ct_post_lar = self.z_logvar(self.z_logvar_drop(lstm_out[:, t]))
             post_z_list.append(Normal(ct_post_mean, ct_post_lar))
+            # p(xt|zt)
+            zt_obs_list.append(self.reparameterize(ct_post_mean, ct_post_lar))
 
             c_fwd = torch.zeros(batch_size, each_block_size).to(device)
             ct_mean = torch.zeros(batch_size, self.z_dim).to(device)
@@ -167,7 +169,7 @@ class FullQDisentangledVAE(nn.Module):
             ct = self.reparameterize(ct_mean, ct_lar)
 
             zt = (1 - wt) * zt_1 + wt * ct
-            zt_obs_list.append(zt)
+
             # decode observation
             zt_1 = zt
 
@@ -254,7 +256,39 @@ class Trainer(object):
 
     def sample_frames(self, epoch):
         with torch.no_grad():
-            recon_x = self.model.decode_frames(self.test_z)
+            each_block_size = self.model.z_dim // self.model.block_size
+            zt_dec = []
+            zt_1 = torch.zeros(1, self.model.z_dim).to(device)
+            zt_dec.append(zt_1)
+            for t in range(1, 8):
+
+                # update weight, w0<...<wd<=1, d means block_size
+                wt = self.model.z_w_function(zt_1)
+                wt = cumsoftmax(wt)
+                # posterior over ct, q(ct|ot,ft)
+
+                c_fwd = torch.zeros(1, each_block_size).to(device)
+                ct_mean = torch.zeros(1, self.model.z_dim).to(device)
+                ct_lar = torch.zeros(1, self.model.z_dim).to(device)
+
+                for fwd_t in range(self.model.block_size):
+                    # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
+                    c_fwd = c_fwd = self.model.z_to_c_fwd(zt_1[:, fwd_t * each_block_size:(fwd_t + 1) * each_block_size],
+                                                    c_fwd)
+                    c_fwd_latent_mean = self.model.z_mean_prior(c_fwd)
+                    c_fwd_latent_lar = self.model.z_logvar_prior(c_fwd)
+
+                    ct_mean[:, fwd_t * each_block_size:(fwd_t + 1) * each_block_size] = c_fwd_latent_mean
+                    ct_lar[:, fwd_t * each_block_size:(fwd_t + 1) * each_block_size] = c_fwd_latent_lar
+
+                ct = self.reparameterize(ct_mean, ct_lar)
+
+                zt = (1 - wt) * zt_1 + wt * ct
+                zt_dec.append(zt)
+                # decode observation
+                zt_1 = zt
+            zt_dec = torch.stack(zt_dec, dim=1)
+            recon_x = self.model.decode_frames(zt_dec)
             recon_x = recon_x.view(16, 3, 64, 64)
             torchvision.utils.save_image(recon_x, './Hybrid/%s/epoch%d.png' % (self.sample_path, epoch))
 
