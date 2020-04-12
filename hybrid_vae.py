@@ -189,7 +189,6 @@ def cumsoftmax(x, dim=-1):
 
 def loss_fn(original_seq, recon_seq, post_z, prior_z):
     mse = F.mse_loss(recon_seq, original_seq, reduction='sum');
-    #kld_z = -0.5 * torch.sum(1 + z_logvar - torch.pow(z_mean, 2) - torch.exp(z_logvar))
 
     # compute kl related to states, kl(q(ct|ot,ft)||p(ct|zt-1)) and kl(q(z0|f0)||N(0,1))
     kl_z_list = []

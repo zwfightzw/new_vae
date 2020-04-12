@@ -151,7 +151,6 @@ class FullQDisentangledVAE(nn.Module):
             ct = self.reparameterize(c_fwd_latent_mean, c_fwd_latent_lar)
             zt = zt_1 + ct
 
-            zt_obs_list.append(zt)
             zt_1 = zt
 
         zt_obs_list = torch.stack(zt_obs_list, dim=1)
@@ -167,8 +166,6 @@ class FullQDisentangledVAE(nn.Module):
 
 def loss_fn(original_seq, recon_seq, post_z, prior_z):
     mse = F.mse_loss(recon_seq, original_seq, reduction='sum');
-    #kld_z = -0.5 * torch.sum(1 + z_logvar - torch.pow(z_mean, 2) - torch.exp(z_logvar))
-
     # compute kl related to states, kl(q(ct|ot,ft)||p(ct|zt-1)) and kl(q(z0|f0)||N(0,1))
     kl_z_list = []
     for t in range(len(post_z)):
