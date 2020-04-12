@@ -9,7 +9,7 @@ import torch.optim as optim
 import numpy as np
 from torch.distributions import Normal, kl_divergence
 
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
 
 class Sprites(torch.utils.data.Dataset):
     def __init__(self, path, size):
