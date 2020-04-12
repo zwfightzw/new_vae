@@ -271,8 +271,7 @@ class Trainer(object):
 
                 for fwd_t in range(self.model.block_size):
                     # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
-                    c_fwd = c_fwd = self.model.z_to_c_fwd(zt_1[:, fwd_t * each_block_size:(fwd_t + 1) * each_block_size],
-                                                    c_fwd)
+                    c_fwd = self.model.z_to_c_fwd(zt_1[:, fwd_t * each_block_size:(fwd_t + 1) * each_block_size], c_fwd)
                     c_fwd_latent_mean = self.model.c_mean_prior(c_fwd)
                     c_fwd_latent_lar = self.model.c_logvar_prior(c_fwd)
 
