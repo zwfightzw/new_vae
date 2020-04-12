@@ -279,7 +279,7 @@ class Trainer(object):
                     ct_mean[:, fwd_t * each_block_size:(fwd_t + 1) * each_block_size] = c_fwd_latent_mean
                     ct_lar[:, fwd_t * each_block_size:(fwd_t + 1) * each_block_size] = c_fwd_latent_lar
 
-                ct = self.reparameterize(ct_mean, ct_lar)
+                ct = self.model.reparameterize(ct_mean, ct_lar)
 
                 zt = (1 - wt) * zt_1 + wt * ct
                 zt_dec.append(zt)

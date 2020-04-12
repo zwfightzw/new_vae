@@ -241,7 +241,7 @@ class Trainer(object):
                 c_fwd_latent_mean = self.model.z_mean_prior(c_fwd)
                 c_fwd_latent_lar = self.model.z_logvar_prior(c_fwd)
 
-                ct = self.reparameterize(c_fwd_latent_mean, c_fwd_latent_lar)
+                ct = self.model.reparameterize(c_fwd_latent_mean, c_fwd_latent_lar)
                 zt = zt_1 + ct
 
                 zt_dec.append(zt)
