@@ -39,8 +39,8 @@ class FullQDisentangledVAE(nn.Module):
         self.z_mean_drop = nn.Dropout(0.3)
         self.z_logvar_drop = nn.Dropout(0.3)
 
-        self.z_mean_prior = nn.Linear(self.z_dim//self.block_size, self.z_dim//self.block_size)
-        self.z_logvar_prior = nn.Linear(self.z_dim//self.block_size, self.z_dim//self.block_size)
+        self.c_mean_prior = nn.Linear(self.z_dim//self.block_size, self.z_dim//self.block_size)
+        self.c_logvar_prior = nn.Linear(self.z_dim//self.block_size, self.z_dim//self.block_size)
 
         self.z_to_c_fwd = nn.GRUCell(input_size=self.z_dim//self.block_size,
                                            hidden_size=self.z_dim//self.block_size)
@@ -156,9 +156,9 @@ class FullQDisentangledVAE(nn.Module):
             for fwd_t in range(self.block_size):
 
                 # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
-                c_fwd = c_fwd = self.z_to_c_fwd(zt_1[:, fwd_t*each_block_size:(fwd_t+1)*each_block_size], c_fwd)
-                c_fwd_latent_mean = self.z_mean_prior(c_fwd)
-                c_fwd_latent_lar = self.z_logvar_prior(c_fwd)
+                c_fwd = self.z_to_c_fwd(zt_1[:, fwd_t*each_block_size:(fwd_t+1)*each_block_size], c_fwd)
+                c_fwd_latent_mean = self.c_mean_prior(c_fwd)
+                c_fwd_latent_lar = self.c_logvar_prior(c_fwd)
 
                 ct_mean[:, fwd_t * each_block_size:(fwd_t + 1) * each_block_size] = c_fwd_latent_mean
                 ct_lar[:, fwd_t * each_block_size:(fwd_t + 1) * each_block_size] = c_fwd_latent_lar
@@ -274,8 +274,8 @@ class Trainer(object):
                     # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
                     c_fwd = c_fwd = self.model.z_to_c_fwd(zt_1[:, fwd_t * each_block_size:(fwd_t + 1) * each_block_size],
                                                     c_fwd)
-                    c_fwd_latent_mean = self.model.z_mean_prior(c_fwd)
-                    c_fwd_latent_lar = self.model.z_logvar_prior(c_fwd)
+                    c_fwd_latent_mean = self.model.c_mean_prior(c_fwd)
+                    c_fwd_latent_lar = self.model.c_logvar_prior(c_fwd)
 
                     ct_mean[:, fwd_t * each_block_size:(fwd_t + 1) * each_block_size] = c_fwd_latent_mean
                     ct_lar[:, fwd_t * each_block_size:(fwd_t + 1) * each_block_size] = c_fwd_latent_lar
