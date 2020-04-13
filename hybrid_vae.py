@@ -269,7 +269,7 @@ class Trainer(object):
                     ct_mean[:, fwd_t * each_block_size:(fwd_t + 1) * each_block_size] = c_fwd_latent_mean
                     ct_lar[:, fwd_t * each_block_size:(fwd_t + 1) * each_block_size] = c_fwd_latent_lar
 
-                if torch.isnan(ct_mean) or torch.isnan(ct_lar):
+                if torch.isnan(ct_mean).any().item() or torch.isnan(ct_lar).any().item():
                     print('ct prior is nan')
                 ct = Normal(ct_mean, ct_lar).rsample()
 
