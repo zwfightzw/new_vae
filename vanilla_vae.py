@@ -318,7 +318,7 @@ if __name__ == '__main__':
     testloader = torch.utils.data.DataLoader(sprites_test, batch_size=1, shuffle=True, num_workers=4)
 
     trainer = Trainer(vae, device, sprites_train, sprites_test, trainloader, testloader, epochs=100, batch_size=64,
-                      learning_rate=0.0002, checkpoints='./model/Vanilla-disentangled-vae.model', nsamples=2,
+                      learning_rate=0.0001, checkpoints='./model/Vanilla-disentangled-vae.model', nsamples=2,
                       sample_path='samples',
                       recon_path='recon')
     trainer.load_checkpoint()
