@@ -131,6 +131,8 @@ class FullQDisentangledVAE(nn.Module):
         zt_1 = torch.zeros(batch_size, self.z_dim).to(device)
         for t in range(1, seq_size):
 
+            if torch.isnan(zt_1).any().item():
+                print('zt-1 in process is nan and sequence num is %d'%(t))
             # update weight, w0<...<wd<=1, d means block_size
             wt = self.z_w_function(zt_1)
             wt = cumsoftmax(wt)

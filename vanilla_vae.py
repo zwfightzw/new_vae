@@ -125,7 +125,8 @@ class FullQDisentangledVAE(nn.Module):
 
         zt_1 = torch.zeros(batch_size, self.z_dim).to(device)
         for t in range(1, seq_size):
-
+            if torch.isnan(zt_1).any().item():
+                print('zt-1 in process is nan and sequence num is %d'%(t))
             # posterior over ct, q(ct|ot,ft)
             ct_post_mean = self.z_mean(self.z_mean_drop(lstm_out[:, t]))
             ct_post_lar = self.z_logvar(self.z_logvar_drop(lstm_out[:, t]))
