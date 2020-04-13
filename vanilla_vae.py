@@ -136,6 +136,8 @@ class FullQDisentangledVAE(nn.Module):
             c_fwd = self.z_to_c_fwd(zt_1)
             c_fwd_latent_mean = self.z_mean_prior(c_fwd)
             c_fwd_latent_lar = self.z_logvar_prior(c_fwd)
+            if torch.isnan(c_fwd_latent_mean) or torch.isnan(c_fwd_latent_lar):
+                print('ct prior is nan')
 
             # store the prior of ct_i
             prior_z_lost.append(Normal(c_fwd_latent_mean, c_fwd_latent_lar))
