@@ -114,8 +114,7 @@ class FullQDisentangledVAE(nn.Module):
         zt_obs_list = []
         zt_1_mean = self.z_mean(self.z_mean_drop(lstm_out[:,0]))
         zt_1_lar = self.z_logvar(self.z_logvar_drop(lstm_out[:,0]))
-        if torch.isnan(zt_1_mean).any().item() or torch.isnan(zt_1_lar).any().item():
-            print('z0 posterior is nan')
+
         post_z_list.append(Normal(zt_1_mean, zt_1_lar))
         prior_z0 = torch.distributions.Normal(torch.zeros(self.z_dim).to(device),
                                               torch.ones(self.z_dim).to(device))
@@ -138,8 +137,7 @@ class FullQDisentangledVAE(nn.Module):
             # posterior over ct, q(ct|ot,ft)
             ct_post_mean = self.z_mean(self.z_mean_drop(lstm_out[:, t]))
             ct_post_lar = self.z_logvar(self.z_logvar_drop(lstm_out[:, t]))
-            if torch.isnan(ct_post_mean).any().item() or torch.isnan(ct_post_lar).any().item():
-                print('ct posterior is nan')
+
             post_z_list.append(Normal(ct_post_mean, ct_post_lar))
             # p(xt|zt)
             zt_obs_list.append(Normal(ct_post_mean, ct_post_lar).rsample())
@@ -160,10 +158,8 @@ class FullQDisentangledVAE(nn.Module):
 
             # store the prior of ct_i
             prior_z_lost.append(Normal(ct_mean, ct_lar))
-            if torch.isnan(ct_mean).any().item() or torch.isnan(ct_lar).any().item():
-                print('ct prior is nan')
-            ct = Normal(ct_mean, ct_lar).rsample()
 
+            ct = Normal(ct_mean, ct_lar).rsample()
             zt = (1 - wt) * zt_1 + wt * ct
 
             # decode observation
@@ -190,6 +186,11 @@ def loss_fn(original_seq, recon_seq, post_z, prior_z):
     # compute kl related to states, kl(q(ct|ot,ft)||p(ct|zt-1)) and kl(q(z0|f0)||N(0,1))
     kl_z_list = []
     for t in range(len(post_z)):
+        print('-------------------------* %d *' % (t))
+        if torch.isnan(post_z[t].mean).any().item() or torch.isnan(post_z[t].scale).any().item():
+            print('ct posterior is nan')
+        if torch.isnan(prior_z[t].mean).any().item() or torch.isnan(prior_z[t].scale).any().item():
+            print('ct prior is nan')
         # kl divergences (sum over dimension)
         kl_obs_state = kl_divergence(post_z[t], prior_z[t])
         kl_z_list.append(kl_obs_state.sum(-1))
