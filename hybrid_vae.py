@@ -188,10 +188,11 @@ def loss_fn(original_seq, recon_seq, post_z, prior_z):
     # compute kl related to states, kl(q(ct|ot,ft)||p(ct|zt-1)) and kl(q(z0|f0)||N(0,1))
     kl_z_list = []
     for t in range(len(post_z)):
-        print('-------------------------* %d *' % (t))
         if torch.isnan(post_z[t].mean).any().item() or torch.isnan(post_z[t].scale).any().item():
+            print('-------------------------* %d *' % (t))
             print('ct posterior is nan')
         if torch.isnan(prior_z[t].mean).any().item() or torch.isnan(prior_z[t].scale).any().item():
+            print('-------------------------* %d *' % (t))
             print('ct prior is nan')
         # kl divergences (sum over dimension)
         kl_obs_state = kl_divergence(post_z[t], prior_z[t])
