@@ -102,15 +102,6 @@ class FullQDisentangledVAE(nn.Module):
             x))  # Images are normalized to -1,1 range hence use tanh. Remove batchnorm because it should fit the final distribution
         return x.view(-1, self.frames, 3, 64, 64)  # Convert the stacked batches back into frames. Images are 64*64*3
 
-    def reparameterize(self, mean, logvar):
-        if self.training:
-            eps = torch.randn_like(logvar)
-            std = torch.exp(0.5 * logvar)
-            z = mean + eps * std
-            return z
-        else:
-            return mean
-
     def encode_z(self, x):
         lstm_out, _ = self.z_lstm(x)
 
@@ -125,7 +116,7 @@ class FullQDisentangledVAE(nn.Module):
 
         prior_z_lost.append(prior_z0)
         # decode z0 observation
-        zt_1_dec = self.reparameterize(zt_1_mean, zt_1_lar)
+        zt_1_dec = Normal(zt_1_mean, zt_1_lar).rsample()
 
         zt_obs_list.append(zt_1_dec)
         batch_size = lstm_out.shape[0]
@@ -139,7 +130,7 @@ class FullQDisentangledVAE(nn.Module):
             ct_post_lar = self.z_logvar(self.z_logvar_drop(lstm_out[:, t]))
             post_z_list.append(Normal(ct_post_mean, ct_post_lar))
             # p(xt|zt)
-            zt_obs_list.append(self.reparameterize(ct_post_mean, ct_post_lar))
+            zt_obs_list.append(Normal(ct_post_mean, ct_post_lar).rsample())
 
             # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
             c_fwd = self.z_to_c_fwd(zt_1)
@@ -148,7 +139,7 @@ class FullQDisentangledVAE(nn.Module):
 
             # store the prior of ct_i
             prior_z_lost.append(Normal(c_fwd_latent_mean, c_fwd_latent_lar))
-            ct = self.reparameterize(c_fwd_latent_mean, c_fwd_latent_lar)
+            ct = Normal(c_fwd_latent_mean, c_fwd_latent_lar).rsample()
             zt = zt_1 + ct
 
             zt_1 = zt
@@ -241,7 +232,7 @@ class Trainer(object):
                 c_fwd_latent_mean = self.model.z_mean_prior(c_fwd)
                 c_fwd_latent_lar = self.model.z_logvar_prior(c_fwd)
 
-                ct = self.model.reparameterize(c_fwd_latent_mean, c_fwd_latent_lar)
+                ct = Normal(c_fwd_latent_mean, c_fwd_latent_lar).rsample()
                 zt = zt_1 + ct
 
                 zt_dec.append(zt)
