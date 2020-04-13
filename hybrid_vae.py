@@ -324,6 +324,7 @@ class Trainer(object):
 
     def train_model(self):
         self.model.train()
+        self.clip_norm = 0.0
         for epoch in range(self.start_epoch, self.epochs):
             losses = []
             print("Running Epoch : {}".format(epoch + 1))
@@ -332,7 +333,8 @@ class Trainer(object):
                 self.optimizer.zero_grad()
                 post_z, prior_z, z, recon_x = self.model(data)
                 loss, mse, kl = loss_fn(data, recon_x, post_z, prior_z)
-                nn.utils.clip_grad_norm_(self.model.parameters(), 10.0)
+                if self.clip_norm > 0.0:
+                    nn.utils.clip_grad_norm_(self.model.parameters(), 10.0)
                 loss.backward()
                 self.optimizer.step()
                 losses.append(loss.item())
