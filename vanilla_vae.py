@@ -14,7 +14,7 @@ device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
 class Sprites(torch.utils.data.Dataset):
     def __init__(self, path, size):
         self.path = path
-        self.length = size;
+        self.length = size
 
     def __len__(self):
         return self.length
