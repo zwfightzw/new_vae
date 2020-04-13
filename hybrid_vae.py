@@ -329,6 +329,7 @@ class Trainer(object):
                 self.optimizer.zero_grad()
                 post_z, prior_z, z, recon_x = self.model(data)
                 loss, mse, kl = loss_fn(data, recon_x, post_z, prior_z)
+                nn.utils.clip_grad_norm_(self.model.parameters(), 10.0)
                 loss.backward()
                 self.optimizer.step()
                 losses.append(loss.item())
