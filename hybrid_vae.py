@@ -115,13 +115,13 @@ class FullQDisentangledVAE(nn.Module):
         zt_1_mean = self.z_mean(self.z_mean_drop(lstm_out[:,0]))
         zt_1_lar = self.z_logvar(self.z_logvar_drop(lstm_out[:,0]))
 
-        post_z_list.append(Normal(zt_1_mean, zt_1_lar))
+        post_z_list.append(Normal(zt_1_mean, zt_1_lar+ 1e-5))
         prior_z0 = torch.distributions.Normal(torch.zeros(self.z_dim).to(device),
                                               torch.ones(self.z_dim).to(device))
 
         prior_z_lost.append(prior_z0)
         # decode z0 observation
-        zt_1_dec = Normal(zt_1_mean, zt_1_lar).rsample()
+        zt_1_dec = Normal(zt_1_mean, zt_1_lar+ 1e-5).rsample()
 
         zt_obs_list.append(zt_1_dec)
         batch_size = lstm_out.shape[0]
@@ -140,9 +140,9 @@ class FullQDisentangledVAE(nn.Module):
             ct_post_mean = self.z_mean(self.z_mean_drop(lstm_out[:, t]))
             ct_post_lar = self.z_logvar(self.z_logvar_drop(lstm_out[:, t]))
 
-            post_z_list.append(Normal(ct_post_mean, ct_post_lar))
+            post_z_list.append(Normal(ct_post_mean, ct_post_lar+ 1e-5))
             # p(xt|zt)
-            zt_obs_list.append(Normal(ct_post_mean, ct_post_lar).rsample())
+            zt_obs_list.append(Normal(ct_post_mean, ct_post_lar+ 1e-5).rsample())
 
             c_fwd = torch.zeros(batch_size, each_block_size).to(device)
             ct_mean = torch.zeros(batch_size, self.z_dim).to(device)
@@ -159,9 +159,9 @@ class FullQDisentangledVAE(nn.Module):
                 ct_lar[:, fwd_t * each_block_size:(fwd_t + 1) * each_block_size] = c_fwd_latent_lar
 
             # store the prior of ct_i
-            prior_z_lost.append(Normal(ct_mean, ct_lar))
+            prior_z_lost.append(Normal(ct_mean, ct_lar+ 1e-5))
 
-            ct = Normal(ct_mean, ct_lar).rsample()
+            ct = Normal(ct_mean, ct_lar+ 1e-5).rsample()
             zt = (1 - wt) * zt_1 + wt * ct
 
             # decode observation
@@ -278,7 +278,7 @@ class Trainer(object):
                     ct_mean[:, fwd_t * each_block_size:(fwd_t + 1) * each_block_size] = c_fwd_latent_mean
                     ct_lar[:, fwd_t * each_block_size:(fwd_t + 1) * each_block_size] = c_fwd_latent_lar
 
-                ct = Normal(ct_mean, ct_lar).rsample()
+                ct = Normal(ct_mean, ct_lar+ 1e-5).rsample()
 
                 zt = (1 - wt) * zt_1 + wt * ct
                 zt_dec.append(zt)

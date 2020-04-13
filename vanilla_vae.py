@@ -111,13 +111,13 @@ class FullQDisentangledVAE(nn.Module):
         zt_1_mean = self.z_mean(self.z_mean_drop(lstm_out[:,0]))
         zt_1_lar = self.z_logvar(self.z_logvar_drop(lstm_out[:,0]))
 
-        post_z_list.append(Normal(zt_1_mean, zt_1_lar))
+        post_z_list.append(Normal(zt_1_mean, zt_1_lar + 1e-5))
         prior_z0 = torch.distributions.Normal(torch.zeros(self.z_dim).to(device),
                                               torch.ones(self.z_dim).to(device))
 
         prior_z_lost.append(prior_z0)
         # decode z0 observation
-        zt_1_dec = Normal(zt_1_mean, zt_1_lar).rsample()
+        zt_1_dec = Normal(zt_1_mean, zt_1_lar+ 1e-5).rsample()
 
         zt_obs_list.append(zt_1_dec)
         batch_size = lstm_out.shape[0]
@@ -131,9 +131,10 @@ class FullQDisentangledVAE(nn.Module):
             ct_post_mean = self.z_mean(self.z_mean_drop(lstm_out[:, t]))
             ct_post_lar = self.z_logvar(self.z_logvar_drop(lstm_out[:, t]))
 
-            post_z_list.append(Normal(ct_post_mean, ct_post_lar))
+            post_z_list.append(Normal(ct_post_mean, ct_post_lar + 1e-5 )) # keep > 0
+
             # p(xt|zt)
-            zt_obs_list.append(Normal(ct_post_mean, ct_post_lar).rsample())
+            zt_obs_list.append(Normal(ct_post_mean, ct_post_lar + 1e-5).rsample())
 
             # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
             c_fwd = self.z_to_c_fwd(zt_1)
@@ -141,8 +142,8 @@ class FullQDisentangledVAE(nn.Module):
             c_fwd_latent_lar = self.z_logvar_prior(c_fwd)
 
             # store the prior of ct_i
-            prior_z_lost.append(Normal(c_fwd_latent_mean, c_fwd_latent_lar))
-            ct = Normal(c_fwd_latent_mean, c_fwd_latent_lar).rsample()
+            prior_z_lost.append(Normal(c_fwd_latent_mean, c_fwd_latent_lar+ 1e-5))
+            ct = Normal(c_fwd_latent_mean, c_fwd_latent_lar + 1e-5).rsample()
             zt = zt_1 + ct
 
             zt_1 = zt
@@ -240,7 +241,7 @@ class Trainer(object):
                 c_fwd_latent_mean = self.model.z_mean_prior(c_fwd)
                 c_fwd_latent_lar = self.model.z_logvar_prior(c_fwd)
 
-                ct = Normal(c_fwd_latent_mean, c_fwd_latent_lar).rsample()
+                ct = Normal(c_fwd_latent_mean, c_fwd_latent_lar + 1e-5).rsample()
                 zt = zt_1 + ct
 
                 zt_dec.append(zt)
