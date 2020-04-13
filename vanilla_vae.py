@@ -174,7 +174,7 @@ def loss_fn(original_seq, recon_seq, post_z, prior_z):
         kl_z_list.append(kl_obs_state.sum(-1))
     kld_z = torch.stack(kl_z_list, dim=1)
 
-    return mse + kld_z.mean()
+    return mse + kld_z.mean(), mse, kld_z.mean()
 
 class Trainer(object):
     def __init__(self, model, device, train, test, trainloader, testloader, epochs, batch_size, learning_rate, nsamples,
@@ -292,10 +292,11 @@ class Trainer(object):
                 data = data.to(device)
                 self.optimizer.zero_grad()
                 post_z, prior_z, z, recon_x = self.model(data)
-                loss = loss_fn(data, recon_x, post_z, prior_z)
+                loss, mse, kl = loss_fn(data, recon_x, post_z, prior_z)
                 loss.backward()
                 self.optimizer.step()
                 losses.append(loss.item())
+                print('mse loss is %f, kl loss is %f'%(mse.item(), kl.item()))
             meanloss = np.mean(losses)
             self.epoch_losses.append(meanloss)
             print("Epoch {} : Average Loss: {}".format(epoch + 1, meanloss))
