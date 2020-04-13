@@ -136,6 +136,8 @@ class FullQDisentangledVAE(nn.Module):
             # posterior over ct, q(ct|ot,ft)
             ct_post_mean = self.z_mean(self.z_mean_drop(lstm_out[:, t]))
             ct_post_lar = self.z_logvar(self.z_logvar_drop(lstm_out[:, t]))
+            if torch.isnan(ct_post_mean).any().item() or torch.isnan(ct_post_lar).any().item():
+                print('ct posterior is nan')
             post_z_list.append(Normal(ct_post_mean, ct_post_lar))
             # p(xt|zt)
             zt_obs_list.append(Normal(ct_post_mean, ct_post_lar).rsample())
@@ -156,6 +158,8 @@ class FullQDisentangledVAE(nn.Module):
 
             # store the prior of ct_i
             prior_z_lost.append(Normal(ct_mean, ct_lar))
+            if torch.isnan(ct_mean).any().item() or torch.isnan(ct_lar).any().item():
+                print('ct prior is nan')
             ct = Normal(ct_mean, ct_lar).rsample()
 
             zt = (1 - wt) * zt_1 + wt * ct
