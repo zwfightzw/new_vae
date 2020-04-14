@@ -202,9 +202,10 @@ def _kl_normal_normal(p, q):
     return 0.5 * (var_ratio + t1 - 1 - var_ratio.log())
 
 def loss_fn(original_seq, recon_seq, post_z, prior_z):
-    mse = 0.0
+    mse = []
     for i in range(recon_seq.shape[0]):
-        mse += F.mse_loss(recon_seq[i], original_seq[i], reduction='sum')
+        mse.append(F.mse_loss(recon_seq[i], original_seq[i], reduction='sum'))
+    mse = torch.stack(mse)
     # compute kl related to states, kl(q(ct|ot,ft)||p(ct|zt-1)) and kl(q(z0|f0)||N(0,1))
     kl_z_list = []
     for t in range(len(post_z)):
@@ -218,8 +219,10 @@ def loss_fn(original_seq, recon_seq, post_z, prior_z):
         kl_obs_state = _kl_normal_normal(prior_z[t], post_z[t]).sum(-1).mean()
         kl_z_list.append(kl_obs_state)
     kld_z = torch.stack(kl_z_list)
+    mse_loss = mse.mean()
+    kl_loss = kld_z.sum()
 
-    return mse + kld_z.mean(), mse, kld_z.mean()
+    return mse_loss + kl_loss, mse_loss.item(), kl_loss.item()
 
 class Trainer(object):
     def __init__(self, model, device, train, test, trainloader, testloader, epochs, batch_size, learning_rate, nsamples,
@@ -327,7 +330,7 @@ class Trainer(object):
                 loss.backward()
                 self.optimizer.step()
                 losses.append(loss.item())
-                loss_info = 'mse loss is %f, kl loss is %f' % (mse.item(), kl.item())
+                loss_info = 'mse loss is %f, kl loss is %f' % (mse, kl)
                 write_log(loss_info, self.log_path)
 
             meanloss = np.mean(losses)
