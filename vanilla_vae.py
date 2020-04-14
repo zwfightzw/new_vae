@@ -49,8 +49,7 @@ class FullQDisentangledVAE(nn.Module):
         self.z_mean_prior = nn.Linear(self.z_dim, self.z_dim)
         self.z_logvar_prior = nn.Linear(self.z_dim, self.z_dim)
 
-        self.z_to_c_fwd = nn.GRUCell(input_size=self.z_dim,
-                                           hidden_size=self.z_dim)
+        self.z_to_c_fwd = nn.Linear(self.z_dim, self.z_dim)
 
         self.conv1 = nn.Conv2d(3, 256, kernel_size=4, stride=2, padding=1)
         self.conv2 = nn.Conv2d(256, 256, kernel_size=4, stride=2, padding=1)
@@ -325,7 +324,7 @@ if __name__ == '__main__':
 
     # optimization
     parser.add_argument('--learn-rate', type=float, default=0.0001)
-    parser.add_argument('--grad-clip', type=float, default=1e10)
+    parser.add_argument('--grad-clip', type=float, default=10.0)
     parser.add_argument('--max-epochs', type=int, default=100)
 
     FLAGS = parser.parse_args()
