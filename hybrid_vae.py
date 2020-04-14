@@ -372,7 +372,7 @@ if __name__ == '__main__':
     vae = FullQDisentangledVAE(frames=8, z_dim=32, hidden_dim=512, conv_dim=1024)
     sprites_train = Sprites('./dataset/lpc-dataset/train/', 6687)
     sprites_test = Sprites('./dataset/lpc-dataset/test/', 873)
-
+    starttime = datetime.datetime.now()
     now = datetime.datetime.now(dateutil.tz.tzlocal())
     time_dir = now.strftime('%Y_%m_%d_%H_%M_%S')
     base_path = './%s/%s'%(FLAGS.method, time_dir)
@@ -398,3 +398,11 @@ if __name__ == '__main__':
                       recon_path=log_recon, log_path = log_path)
     trainer.load_checkpoint()
     trainer.train_model()
+    endtime = datetime.datetime.now()
+    seconds = (endtime - starttime).seconds
+    hours = seconds // 3600
+    minutes = (seconds % 3600)//60
+    second = (seconds % 3600)%60
+    print((endtime - starttime))
+    timeStr = "running time: " + str(hours)+ 'hours'+ str(minutes) + 'minutes' + str(second) + "second"
+    write_log(time_dir, log_path)
