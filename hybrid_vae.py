@@ -319,7 +319,7 @@ class Trainer(object):
         self.clip_norm = 0.0
         for epoch in range(self.start_epoch, self.epochs):
             losses = []
-            print("Running Epoch : {}".format(epoch + 1))
+            write_log("Running Epoch : {}".format(epoch + 1), self.log_path)
             for i, data in enumerate(self.trainloader, 1):
                 data = data.to(device)
                 self.optimizer.zero_grad()
@@ -335,7 +335,7 @@ class Trainer(object):
 
             meanloss = np.mean(losses)
             self.epoch_losses.append(meanloss)
-            print("Epoch {} : Average Loss: {}".format(epoch + 1, meanloss))
+            write_log("Epoch {} : Average Loss: {}".format(epoch + 1, meanloss), self.log_path)
             self.save_checkpoint(epoch)
             self.model.eval()
             self.sample_frames(epoch + 1)
