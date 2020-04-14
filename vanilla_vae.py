@@ -130,7 +130,7 @@ class FullQDisentangledVAE(nn.Module):
         batch_size = lstm_out.shape[0]
         seq_size = lstm_out.shape[1]
 
-        zt_1 = torch.zeros(batch_size, self.z_dim).to(device)
+        zt_1 = prior_z0.rsample()
         for t in range(1, seq_size):
             if torch.isnan(zt_1).any().item():
                 print('zt-1 in process is nan and sequence num is %d'%(t))
@@ -244,7 +244,10 @@ class Trainer(object):
         with torch.no_grad():
 
             zt_dec = []
-            zt_1 = torch.zeros(2, self.model.z_dim).to(device)
+            prior_z0 = torch.distributions.Normal(torch.zeros(self.model.z_dim).to(self.device),
+                                                  torch.ones(self.model.z_dim).to(self.device))
+
+            zt_1 = prior_z0.rsample()
             zt_dec.append(zt_1)
             for t in range(1, 8):
 

@@ -138,7 +138,7 @@ class FullQDisentangledVAE(nn.Module):
         seq_size = lstm_out.shape[1]
         each_block_size = self.z_dim // self.block_size
 
-        zt_1 = torch.zeros(batch_size, self.z_dim).to(device)
+        zt_1 = prior_z0.rsample()
         for t in range(1, seq_size):
 
             if torch.isnan(zt_1).any().item():
@@ -272,7 +272,10 @@ class Trainer(object):
         with torch.no_grad():
             each_block_size = self.model.z_dim // self.model.block_size
             zt_dec = []
-            zt_1 = torch.zeros(self.samples, self.model.z_dim).to(device)
+            prior_z0 = torch.distributions.Normal(torch.zeros(self.model.z_dim).to(self.device),
+                                                  torch.ones(self.model.z_dim).to(self.device))
+
+            zt_1 = prior_z0.rsample()
             zt_dec.append(zt_1)
             for t in range(1, 8):
 
