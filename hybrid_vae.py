@@ -12,8 +12,6 @@ import datetime
 import dateutil.tz
 import argparse
 
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-
 def write_log(log, log_path):
     f = open(log_path, mode='a')
     f.write(str(log))
@@ -33,13 +31,14 @@ class Sprites(torch.utils.data.Dataset):
 
 
 class FullQDisentangledVAE(nn.Module):
-    def __init__(self, frames, z_dim, conv_dim, hidden_dim):
+    def __init__(self, frames, z_dim, conv_dim, hidden_dim, device):
         super(FullQDisentangledVAE, self).__init__()
         self.z_dim = z_dim
         self.frames = frames
         self.conv_dim = conv_dim
         self.hidden_dim = hidden_dim
         self.block_size = 4
+        self.device = device
 
         self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim//2, 1,
                               bidirectional=True, batch_first=True)
@@ -127,8 +126,8 @@ class FullQDisentangledVAE(nn.Module):
         post_z_1 = Normal(zt_1_mean, F.softplus(zt_1_lar) + 1e-5)
 
         post_z_list.append(post_z_1)
-        prior_z0 = torch.distributions.Normal(torch.zeros(self.z_dim).to(device),
-                                              torch.ones(self.z_dim).to(device))
+        prior_z0 = torch.distributions.Normal(torch.zeros(self.z_dim).to(self.device),
+                                              torch.ones(self.z_dim).to(self.device))
 
         prior_z_lost.append(prior_z0)
         # decode z0 observation
@@ -366,10 +365,12 @@ if __name__ == '__main__':
     parser.add_argument('--learn-rate', type=float, default=0.0001)
     parser.add_argument('--grad-clip', type=float, default=1e10)
     parser.add_argument('--max-epochs', type=int, default=100)
+    parser.add_argument('--gpu_id', type=int, default=0)
 
     FLAGS = parser.parse_args()
+    device = torch.device('cuda:%d' % (FLAGS.gpu_id) if torch.cuda.is_available() else 'cpu')
 
-    vae = FullQDisentangledVAE(frames=8, z_dim=32, hidden_dim=512, conv_dim=1024)
+    vae = FullQDisentangledVAE(frames=8, z_dim=32, hidden_dim=512, conv_dim=1024, device=device)
     sprites_train = Sprites('./dataset/lpc-dataset/train/', 6687)
     sprites_test = Sprites('./dataset/lpc-dataset/test/', 873)
     starttime = datetime.datetime.now()
