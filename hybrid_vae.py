@@ -357,7 +357,7 @@ if __name__ == '__main__':
     # state size
     parser.add_argument('--z-dim', type=int, default=32)
     parser.add_argument('--hidden-dim', type=int, default=512)
-    parser.add_argument('--conv-dim', type=int, default=1024)
+    parser.add_argument('--conv-dim', type=int, default=10.0)
     # data size
     parser.add_argument('--batch-size', type=int, default=64)
     parser.add_argument('--frame-size', type=int, default=8)
