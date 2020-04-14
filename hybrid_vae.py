@@ -223,7 +223,7 @@ def loss_fn(original_seq, recon_seq, post_z, prior_z):
 
 class Trainer(object):
     def __init__(self, model, device, train, test, trainloader, testloader, epochs, batch_size, learning_rate, nsamples,
-                 sample_path, recon_path, checkpoints):
+                 sample_path, recon_path, checkpoints, log_path):
         self.trainloader = trainloader
         self.train = train
         self.test = test
@@ -240,6 +240,7 @@ class Trainer(object):
         self.samples = nsamples
         self.sample_path = sample_path
         self.recon_path = recon_path
+        self.log_path = log_path
         self.test_z = torch.randn(self.samples, model.frames, model.z_dim, device=self.device)
 
         self.epoch_losses = []
@@ -326,7 +327,9 @@ class Trainer(object):
                 loss.backward()
                 self.optimizer.step()
                 losses.append(loss.item())
-                print('mse loss is %f, kl loss is %f' % (mse.item(), kl.item()))
+                loss_info = 'mse loss is %f, kl loss is %f' % (mse.item(), kl.item())
+                write_log(loss_info, self.log_path)
+
             meanloss = np.mean(losses)
             self.epoch_losses.append(meanloss)
             print("Epoch {} : Average Loss: {}".format(epoch + 1, meanloss))
@@ -373,6 +376,7 @@ if __name__ == '__main__':
     model_path = '%s/model' % (base_path)
     log_recon = '%s/recon' % (base_path)
     log_sample = '%s/sample' % (base_path)
+    log_path = '%s/log_info.txt' % (base_path)
     if not os.path.exists(model_path):
         os.makedirs(model_path)
     if not os.path.exists(log_recon):
@@ -380,7 +384,7 @@ if __name__ == '__main__':
     if not os.path.exists(log_sample):
         os.makedirs(log_sample)
 
-    write_log(FLAGS, '%s/log_info.txt' % (base_path))
+    write_log(FLAGS, log_path)
 
     trainloader = torch.utils.data.DataLoader(sprites_train, batch_size=FLAGS.batch_size, shuffle=True, num_workers=4)
     testloader = torch.utils.data.DataLoader(sprites_test, batch_size=1, shuffle=True, num_workers=4)
@@ -388,6 +392,6 @@ if __name__ == '__main__':
     trainer = Trainer(vae, device, sprites_train, sprites_test, trainloader, testloader, epochs=FLAGS.max_epochs, batch_size=FLAGS.batch_size,
                       learning_rate=FLAGS.learn_rate, checkpoints='%s/%s-disentangled-vae.model'%(model_path, FLAGS.method), nsamples=2,
                       sample_path=log_sample,
-                      recon_path=log_recon)
+                      recon_path=log_recon, log_path = log_path)
     trainer.load_checkpoint()
     trainer.train_model()
