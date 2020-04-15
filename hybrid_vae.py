@@ -137,8 +137,8 @@ class FullQDisentangledVAE(nn.Module):
         batch_size = lstm_out.shape[0]
         seq_size = lstm_out.shape[1]
         each_block_size = self.z_dim // self.block_size
-
-        zt_1 = prior_z0.rsample()
+        with torch.no_grad():
+            zt_1 = prior_z0.rsample()
         for t in range(1, seq_size):
 
             if torch.isnan(zt_1).any().item():
