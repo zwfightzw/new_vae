@@ -34,7 +34,10 @@ class GRUCell(nn.Module):
         h_r, h_i, h_n = gate_h.chunk(3, 1)
 
         resetgate = F.sigmoid(i_r + h_r)
-        inputgate = F.sigmoid(i_i + h_i) * w
+        if w == None:
+            inputgate = F.sigmoid(i_i + h_i)
+        else:
+            inputgate = F.sigmoid(i_i + h_i) * w
         newgate = F.tanh(i_n + (resetgate * h_n))
 
         hy = newgate + inputgate * (hidden - newgate)
