@@ -361,7 +361,7 @@ if __name__ == '__main__':
     # state size
     parser.add_argument('--z-dim', type=int, default=32)
     parser.add_argument('--hidden-dim', type=int, default=512)
-    parser.add_argument('--conv-dim', type=int, default=10.0)
+    parser.add_argument('--conv-dim', type=int, default=1024)
     # data size
     parser.add_argument('--batch-size', type=int, default=64)
     parser.add_argument('--frame-size', type=int, default=8)
@@ -369,7 +369,7 @@ if __name__ == '__main__':
 
     # optimization
     parser.add_argument('--learn-rate', type=float, default=0.0001)
-    parser.add_argument('--grad-clip', type=float, default=0.0)
+    parser.add_argument('--grad-clip', type=float, default=1e10)
     parser.add_argument('--max-epochs', type=int, default=100)
     parser.add_argument('--gpu_id', type=int, default=0)
 
