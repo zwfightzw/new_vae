@@ -281,6 +281,7 @@ class Trainer(object):
     def train_model(self):
         self.model.train()
         self.clip_norm = 0.0
+        write_log(self.model.z_to_c_fwd, self.log_path)
         for epoch in range(self.start_epoch, self.epochs):
             losses = []
             write_log("Running Epoch : {}".format(epoch + 1), self.log_path)
