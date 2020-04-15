@@ -48,7 +48,7 @@ class FullQDisentangledVAE(nn.Module):
         self.z_logvar_prior = nn.Linear(self.z_dim, self.z_dim)
 
         #self.z_to_c_fwd = nn.Linear(self.z_dim, self.z_dim)
-        self.z_to_c_fwd = nn.GRUCell(input_size=self.z_dim, hidden_size=self.z_dim )
+        self.z_to_z_fwd = nn.GRUCell(input_size=self.z_dim, hidden_size=self.z_dim)
 
         self.conv1 = nn.Conv2d(3, 256, kernel_size=4, stride=2, padding=1)
         self.conv2 = nn.Conv2d(256, 256, kernel_size=4, stride=2, padding=1)
@@ -134,32 +134,31 @@ class FullQDisentangledVAE(nn.Module):
         zt_1 = torch.stack(zt_1, dim=0)
         #zt_1 = torch.zeros(batch_size, self.z_dim).to(device)
 
+        z_fwd = zt_1.new_zeros(batch_size, self.z_dim)
+
         for t in range(1, seq_size):
             if torch.isnan(zt_1).any().item():
                 print('zt-1 in process is nan and sequence num is %d'%(t))
             # posterior over ct, q(ct|ot,ft)
-            ct_post_mean = self.z_mean(lstm_out[:, t])
-            ct_post_lar = self.z_logvar(lstm_out[:, t])
+            zt_post_mean = self.z_mean(lstm_out[:, t])
+            zt_post_lar = self.z_logvar(lstm_out[:, t])
 
-            c_post = Normal(ct_post_mean, F.softplus(ct_post_lar) + 1e-5 )
+            z_post = Normal(zt_post_mean, F.softplus(zt_post_lar) + 1e-5 )
 
-            post_z_list.append(c_post) # keep > 0
+            post_z_list.append(z_post) # keep > 0
 
             # p(xt|zt)
-            zt_obs_list.append(c_post.rsample())
+            zt_obs_list.append(z_post.rsample())
 
             # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
-            c_fwd = self.z_to_c_fwd(zt_1)
-            c_fwd_latent_mean = self.z_mean_prior(c_fwd)
-            c_fwd_latent_lar = self.z_logvar_prior(c_fwd)
+            z_fwd = self.z_to_z_fwd(zt_1, z_fwd)
+            z_fwd_latent_mean = self.z_mean_prior(z_fwd)
+            z_fwd_latent_lar = self.z_logvar_prior(z_fwd)
 
             # store the prior of ct_i
-            c_prior = Normal(c_fwd_latent_mean, F.softplus(c_fwd_latent_lar)+ 1e-5)
-            prior_z_lost.append(c_prior)
-            ct = c_prior.rsample()
-            zt = zt_1 + ct
-
-            zt_1 = zt
+            z_prior = Normal(z_fwd_latent_mean, F.softplus(z_fwd_latent_lar)+ 1e-5)
+            prior_z_lost.append(z_prior)
+            zt_1 = z_prior.rsample()
 
         zt_obs_list = torch.stack(zt_obs_list, dim=1)
 
@@ -253,15 +252,16 @@ class Trainer(object):
             zt_1 = [prior_z0.rsample() for i in range(self.samples)]
             zt_1 = torch.stack(zt_1, dim=0)
             zt_dec.append(zt_1)
+            z_fwd = zt_1.new_zeros(self.samples, self.model.z_dim)
+
             for t in range(1, 8):
 
                 # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
-                c_fwd = self.model.z_to_c_fwd(zt_1)
-                c_fwd_latent_mean = self.model.z_mean_prior(c_fwd)
-                c_fwd_latent_lar = self.model.z_logvar_prior(c_fwd)
+                z_fwd = self.model.z_to_z_fwd(zt_1, z_fwd)
+                c_fwd_latent_mean = self.model.z_mean_prior(z_fwd)
+                c_fwd_latent_lar = self.model.z_logvar_prior(z_fwd)
 
-                ct = Normal(c_fwd_latent_mean, F.softplus(c_fwd_latent_lar) + 1e-5).rsample()
-                zt = zt_1 + ct
+                zt = Normal(c_fwd_latent_mean, F.softplus(c_fwd_latent_lar) + 1e-5).rsample()
 
                 zt_dec.append(zt)
                 zt_1 = zt
@@ -281,7 +281,7 @@ class Trainer(object):
     def train_model(self):
         self.model.train()
         self.clip_norm = 0.0
-        write_log(self.model.z_to_c_fwd, self.log_path)
+        write_log(self.model.z_to_z_fwd, self.log_path)
         for epoch in range(self.start_epoch, self.epochs):
             losses = []
             write_log("Running Epoch : {}".format(epoch + 1), self.log_path)
@@ -322,7 +322,7 @@ if __name__ == '__main__':
     # dataset
     parser.add_argument('--dset_name', type=str, default='moving_mnist')
     # state size
-    parser.add_argument('--z-dim', type=int, default=32)
+    parser.add_argument('--z-dim', type=int, default=36)
     parser.add_argument('--hidden-dim', type=int, default=512)
     parser.add_argument('--conv-dim', type=int, default=1024)
     # data size

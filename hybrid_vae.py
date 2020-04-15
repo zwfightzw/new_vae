@@ -37,7 +37,7 @@ class FullQDisentangledVAE(nn.Module):
         self.frames = frames
         self.conv_dim = conv_dim
         self.hidden_dim = hidden_dim
-        self.block_size = 4
+        self.block_size = 3
         self.device = device
 
         self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim//2, 1,
@@ -50,10 +50,10 @@ class FullQDisentangledVAE(nn.Module):
         self.c_mean_prior = nn.Linear(self.z_dim//self.block_size, self.z_dim//self.block_size)
         self.c_logvar_prior = nn.Linear(self.z_dim//self.block_size, self.z_dim//self.block_size)
 
-        self.z_to_c_fwd = nn.GRUCell(input_size=self.z_dim//self.block_size,
-                                           hidden_size=self.z_dim//self.block_size)
+        self.z_to_c_fwd_list = [nn.GRUCell(input_size=self.z_dim//self.block_size, hidden_size=self.z_dim//self.block_size)
+                                for i in range(self.block_size)]
 
-        self.z_w_function = nn.Linear(self.z_dim, self.z_dim)
+        self.z_w_function = nn.Linear(self.z_dim, self.block_size)
 
         self.conv1 = nn.Conv2d(3, 256, kernel_size=4, stride=2, padding=1)
         self.conv2 = nn.Conv2d(256, 256, kernel_size=4, stride=2, padding=1)
@@ -144,9 +144,7 @@ class FullQDisentangledVAE(nn.Module):
 
             if torch.isnan(zt_1).any().item():
                 print('zt-1 in process is nan and sequence num is %d'%(t))
-            # update weight, w0<...<wd<=1, d means block_size
-            wt = self.z_w_function(zt_1)
-            wt = cumsoftmax(wt)
+
             # posterior over ct, q(ct|ot,ft)
             ct_post_mean = self.z_mean(self.z_mean_drop(lstm_out[:, t]))
             ct_post_lar = self.z_logvar(self.z_logvar_drop(lstm_out[:, t]))
@@ -164,7 +162,7 @@ class FullQDisentangledVAE(nn.Module):
             for fwd_t in range(self.block_size):
 
                 # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
-                c_fwd = self.z_to_c_fwd(zt_1[:, fwd_t*each_block_size:(fwd_t+1)*each_block_size], c_fwd)
+                c_fwd = self.z_to_c_fwd_list(zt_1[:, fwd_t*each_block_size:(fwd_t+1)*each_block_size], c_fwd)
                 c_fwd_latent_mean = self.c_mean_prior(c_fwd)
                 c_fwd_latent_lar = self.c_logvar_prior(c_fwd)
 
@@ -175,6 +173,9 @@ class FullQDisentangledVAE(nn.Module):
             c_prior = Normal(ct_mean, F.softplus(ct_lar) + 1e-5)
             prior_z_lost.append(c_prior)
 
+            # update weight, w0<...<wd<=1, d means block_size
+            wt = self.z_w_function(zt_1)
+            wt = cumsoftmax(wt)
             ct = c_prior.rsample()
             zt = (1 - wt) * zt_1 + wt * ct
 
@@ -359,7 +360,7 @@ if __name__ == '__main__':
     # dataset
     parser.add_argument('--dset_name', type=str, default='moving_mnist')
     # state size
-    parser.add_argument('--z-dim', type=int, default=32)
+    parser.add_argument('--z-dim', type=int, default=36)
     parser.add_argument('--hidden-dim', type=int, default=512)
     parser.add_argument('--conv-dim', type=int, default=1024)
     # data size
