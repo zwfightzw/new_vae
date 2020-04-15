@@ -306,7 +306,7 @@ class Trainer(object):
                         zt_1_tmp = concat(torch.zeros(self.samples, self.model.z_dim//self.model.block_size).to(device),
                                           zt_1[:, (fwd_t - 1) * each_block_size:(fwd_t + 1) * each_block_size])
 
-                    z_fwd_list[fwd_t] = self.model.z_to_c_fwd_list[fwd_t](zt_1_tmp, z_fwd_list[fwd_t], wt[:, fwd_t])
+                    z_fwd_list[fwd_t] = self.model.z_to_c_fwd_list[fwd_t](zt_1_tmp, z_fwd_list[fwd_t], wt[:, fwd_t].view(-1,1))
 
                 z_fwd_all = torch.stack(z_fwd_list, dim=2).view(self.samples, self.model.z_dim)
                 # update weight, w0<...<wd<=1, d means block_size
@@ -340,6 +340,14 @@ class Trainer(object):
     def train_model(self):
         self.model.train()
         self.clip_norm = 0.0
+
+        self.model.eval()
+        self.sample_frames(0 + 1)
+        sample = self.test[int(torch.randint(0, len(self.test), (1,)).item())]
+        sample = torch.unsqueeze(sample, 0)
+        sample = sample.to(self.device)
+        self.recon_frame(0 + 1, sample)
+
         for epoch in range(self.start_epoch, self.epochs):
             losses = []
             write_log("Running Epoch : {}".format(epoch + 1), self.log_path)

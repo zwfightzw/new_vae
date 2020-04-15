@@ -27,14 +27,14 @@ class GRUCell(nn.Module):
         gate_x = self.x2h(x)
         gate_h = self.h2h(hidden)
 
-        gate_x = gate_x.squeeze()
-        gate_h = gate_h.squeeze()
+        #gate_x = gate_x.squeeze()
+        #gate_h = gate_h.squeeze()
 
         i_r, i_i, i_n = gate_x.chunk(3, 1)
         h_r, h_i, h_n = gate_h.chunk(3, 1)
 
         resetgate = F.sigmoid(i_r + h_r)
-        if w == None:
+        if w is None:
             inputgate = F.sigmoid(i_i + h_i)
         else:
             inputgate = F.sigmoid(i_i + h_i) * w
