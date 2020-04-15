@@ -52,7 +52,7 @@ class FullQDisentangledVAE(nn.Module):
         self.z_mean_prior = nn.Linear(self.z_dim, self.z_dim)
         self.z_logvar_prior = nn.Linear(self.z_dim, self.z_dim)
 
-        self.z_to_c_fwd_list = [GRUCell(input_size=self.z_dim, hidden_size=self.z_dim//self.block_size)
+        self.z_to_c_fwd_list = [GRUCell(input_size=self.z_dim, hidden_size=self.z_dim//self.block_size).to(device)
                                 for i in range(self.block_size)]
 
         self.z_w_function = nn.Linear(self.z_dim, self.block_size)

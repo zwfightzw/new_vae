@@ -49,7 +49,7 @@ class FullQDisentangledVAE(nn.Module):
         self.z_logvar_prior = nn.Linear(self.z_dim, self.z_dim)
 
         #self.z_to_c_fwd = nn.Linear(self.z_dim, self.z_dim)
-        self.z_to_z_fwd = GRUCell(input_size=self.z_dim, hidden_size=self.z_dim)
+        self.z_to_z_fwd = GRUCell(input_size=self.z_dim, hidden_size=self.z_dim).to(device)
 
         self.conv1 = nn.Conv2d(3, 256, kernel_size=4, stride=2, padding=1)
         self.conv2 = nn.Conv2d(256, 256, kernel_size=4, stride=2, padding=1)
