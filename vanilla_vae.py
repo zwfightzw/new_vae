@@ -129,8 +129,8 @@ class FullQDisentangledVAE(nn.Module):
         zt_obs_list.append(zt_1_dec)
         batch_size = lstm_out.shape[0]
         seq_size = lstm_out.shape[1]
-
-        zt_1 = prior_z0.rsample()
+        with torch.no_grad():
+            zt_1 = prior_z0.rsample()
         for t in range(1, seq_size):
             if torch.isnan(zt_1).any().item():
                 print('zt-1 in process is nan and sequence num is %d'%(t))
