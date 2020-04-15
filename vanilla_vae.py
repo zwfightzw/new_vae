@@ -202,7 +202,7 @@ def loss_fn(original_seq, recon_seq, post_z, prior_z):
 
 class Trainer(object):
     def __init__(self, model, device, train, test, trainloader, testloader, epochs, batch_size, learning_rate, nsamples,
-                 sample_path, recon_path, checkpoints, log_path):
+                 sample_path, recon_path, checkpoints, log_path, grad_clip):
         self.trainloader = trainloader
         self.train = train
         self.test = test
@@ -212,6 +212,7 @@ class Trainer(object):
         self.device = device
         self.batch_size = batch_size
         self.model = model
+        self.grad_clip = grad_clip
         self.model.to(device)
         self.learning_rate = learning_rate
         self.checkpoints = checkpoints
@@ -281,16 +282,6 @@ class Trainer(object):
 
     def train_model(self):
         self.model.train()
-        self.clip_norm = 0.0
-
-        self.model.eval()
-        self.sample_frames(0 + 1)
-        sample = self.test[int(torch.randint(0, len(self.test), (1,)).item())]
-        sample = torch.unsqueeze(sample, 0)
-        sample = sample.to(self.device)
-        self.recon_frame(0 + 1, sample)
-
-
         write_log(self.model.z_to_z_fwd, self.log_path)
         for epoch in range(self.start_epoch, self.epochs):
             losses = []
@@ -301,8 +292,8 @@ class Trainer(object):
                 post_z, prior_z, z, recon_x = self.model(data)
                 loss, mse, kl = loss_fn(data, recon_x, post_z, prior_z)
                 loss.backward()
-                if self.clip_norm > 0.0:
-                    nn.utils.clip_grad_norm_(self.model.parameters(), 10.0)
+                if self.grad_clip > 0.0:
+                    nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
                 self.optimizer.step()
                 losses.append(loss.item())
                 loss_info = 'mse loss is %f, kl loss is %f' % (mse, kl)
@@ -375,7 +366,7 @@ if __name__ == '__main__':
     trainer = Trainer(vae, device, sprites_train, sprites_test, trainloader, testloader, epochs=FLAGS.max_epochs, batch_size=FLAGS.batch_size,
                       learning_rate=FLAGS.learn_rate, checkpoints='%s/%s-disentangled-vae.model'%(model_path, FLAGS.method), nsamples=FLAGS.nsamples,
                       sample_path=log_sample,
-                      recon_path=log_recon, log_path=log_path)
+                      recon_path=log_recon, log_path=log_path, grad_clip=FLAGS.grad_clip)
     trainer.load_checkpoint()
     trainer.train_model()
     endtime = datetime.datetime.now()
