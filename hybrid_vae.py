@@ -6,6 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.nn.init
 import torch.optim as optim
+from GRU_cell import GRUCell
 import numpy as np
 from torch.distributions import Normal, kl_divergence
 import datetime
@@ -17,6 +18,9 @@ def write_log(log, log_path):
     f.write(str(log))
     f.write('\n')
     f.close()
+
+def concat(*data_list):
+    return torch.cat(data_list, 1)
 
 class Sprites(torch.utils.data.Dataset):
     def __init__(self, path, size):
@@ -44,13 +48,11 @@ class FullQDisentangledVAE(nn.Module):
                               bidirectional=True, batch_first=True)
         self.z_mean = nn.Linear(self.hidden_dim, self.z_dim)
         self.z_logvar = nn.Linear(self.hidden_dim, self.z_dim)
-        self.z_mean_drop = nn.Dropout(0.3)
-        self.z_logvar_drop = nn.Dropout(0.3)
 
-        self.c_mean_prior = nn.Linear(self.z_dim//self.block_size, self.z_dim//self.block_size)
-        self.c_logvar_prior = nn.Linear(self.z_dim//self.block_size, self.z_dim//self.block_size)
+        self.z_mean_prior = nn.Linear(self.z_dim, self.z_dim)
+        self.z_logvar_prior = nn.Linear(self.z_dim, self.z_dim)
 
-        self.z_to_c_fwd_list = [nn.GRUCell(input_size=self.z_dim//self.block_size, hidden_size=self.z_dim//self.block_size)
+        self.z_to_c_fwd_list = [GRUCell(input_size=self.z_dim, hidden_size=self.z_dim//self.block_size)
                                 for i in range(self.block_size)]
 
         self.z_w_function = nn.Linear(self.z_dim, self.block_size)
@@ -120,8 +122,8 @@ class FullQDisentangledVAE(nn.Module):
         post_z_list = []
         prior_z_lost = []
         zt_obs_list = []
-        zt_1_mean = self.z_mean(self.z_mean_drop(lstm_out[:,0]))
-        zt_1_lar = self.z_logvar(self.z_logvar_drop(lstm_out[:,0]))
+        zt_1_mean = self.z_mean(lstm_out[:,0])
+        zt_1_lar = self.z_logvar(lstm_out[:,0])
 
         post_z_1 = Normal(zt_1_mean, F.softplus(zt_1_lar) + 1e-5)
 
@@ -140,44 +142,50 @@ class FullQDisentangledVAE(nn.Module):
 
         zt_1 = [prior_z0.rsample() for i in range(batch_size)]
         zt_1 = torch.stack(zt_1, dim=0)
+        # init wt
+        wt = torch.ones(batch_size, self.block_size).to(device)
+
         for t in range(1, seq_size):
 
             if torch.isnan(zt_1).any().item():
                 print('zt-1 in process is nan and sequence num is %d'%(t))
 
             # posterior over ct, q(ct|ot,ft)
-            ct_post_mean = self.z_mean(self.z_mean_drop(lstm_out[:, t]))
-            ct_post_lar = self.z_logvar(self.z_logvar_drop(lstm_out[:, t]))
+            zt_post_mean = self.z_mean(lstm_out[:, t])
+            zt_post_lar = self.z_logvar(lstm_out[:, t])
 
-            c_post = Normal(ct_post_mean, F.softplus(ct_post_lar) + 1e-5)
+            z_post = Normal(zt_post_mean, F.softplus(zt_post_lar) + 1e-5)
 
-            post_z_list.append(c_post)
+            post_z_list.append(z_post)
             # p(xt|zt)
-            zt_obs_list.append(c_post.rsample())
+            zt_obs_list.append(z_post.rsample())
 
-            c_fwd = torch.zeros(batch_size, each_block_size).to(device)
-            ct_mean = torch.zeros(batch_size, self.z_dim).to(device)
-            ct_lar = torch.zeros(batch_size, self.z_dim).to(device)
+            z_fwd_list = [torch.zeros(batch_size, each_block_size).to(device) for i in range(self.block_size)]
 
             for fwd_t in range(self.block_size):
-
                 # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
-                c_fwd = self.z_to_c_fwd_list(zt_1[:, fwd_t*each_block_size:(fwd_t+1)*each_block_size], c_fwd)
-                c_fwd_latent_mean = self.c_mean_prior(c_fwd)
-                c_fwd_latent_lar = self.c_logvar_prior(c_fwd)
+                if fwd_t==0:
+                    zt_1_tmp = concat(zt_1[:, fwd_t * each_block_size:(fwd_t + 2) * each_block_size], torch.zeros(batch_size, self.z_dim//self.block_size).to(device))
+                if fwd_t==1:
+                    zt_1_tmp = zt_1
+                if fwd_t==2:
+                    zt_1_tmp = concat(torch.zeros(batch_size, self.z_dim//self.block_size).to(device),zt_1[:, (fwd_t-1) * each_block_size:(fwd_t + 1) * each_block_size])
 
-                ct_mean[:, fwd_t * each_block_size:(fwd_t + 1) * each_block_size] = c_fwd_latent_mean
-                ct_lar[:, fwd_t * each_block_size:(fwd_t + 1) * each_block_size] = c_fwd_latent_lar
+                z_fwd_list[fwd_t] = self.z_to_c_fwd_list[fwd_t](zt_1_tmp, z_fwd_list[fwd_t],w=wt[:,fwd_t].view(-1,1))
+
+            z_fwd_all = torch.stack(z_fwd_list, dim=2).view(batch_size, self.z_dim)
+            # update weight, w0<...<wd<=1, d means block_size
+            wt = self.z_w_function(z_fwd_all)
+            wt = cumsoftmax(wt)
+
+            zt_prior_mean = self.z_mean_prior(z_fwd_all)
+            zt_prior_lar = self.z_logvar_prior(z_fwd_all)
 
             # store the prior of ct_i
-            c_prior = Normal(ct_mean, F.softplus(ct_lar) + 1e-5)
-            prior_z_lost.append(c_prior)
+            z_prior = Normal(zt_prior_mean, F.softplus(zt_prior_lar) + 1e-5)
+            prior_z_lost.append(z_prior)
 
-            # update weight, w0<...<wd<=1, d means block_size
-            wt = self.z_w_function(zt_1)
-            wt = cumsoftmax(wt)
-            ct = c_prior.rsample()
-            zt = (1 - wt) * zt_1 + wt * ct
+            zt = z_prior.rsample()
 
             # decode observation
             zt_1 = zt
@@ -280,32 +288,42 @@ class Trainer(object):
             zt_1 = [prior_z0.rsample() for i in range(self.samples)]
             zt_1 = torch.stack(zt_1, dim=0)
             zt_dec.append(zt_1)
-            for t in range(1, 8):
+            # init wt
+            wt = torch.ones(self.samples, self.model.block_size).to(device)
 
-                # update weight, w0<...<wd<=1, d means block_size
-                wt = self.model.z_w_function(zt_1)
-                wt = cumsoftmax(wt)
-                # posterior over ct, q(ct|ot,ft)
+            for t in range(1, self.model.frames):
 
-                c_fwd = torch.zeros(self.samples, each_block_size).to(device)
-                ct_mean = torch.zeros(self.samples, self.model.z_dim).to(device)
-                ct_lar = torch.zeros(self.samples, self.model.z_dim).to(device)
+                z_fwd_list = [torch.zeros(self.samples, each_block_size).to(device) for i in range(self.model.block_size)]
 
                 for fwd_t in range(self.model.block_size):
                     # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
-                    c_fwd = self.model.z_to_c_fwd(zt_1[:, fwd_t * each_block_size:(fwd_t + 1) * each_block_size], c_fwd)
-                    c_fwd_latent_mean = self.model.c_mean_prior(c_fwd)
-                    c_fwd_latent_lar = self.model.c_logvar_prior(c_fwd)
+                    if fwd_t == 0:
+                        zt_1_tmp = concat(zt_1[:, fwd_t * each_block_size:(fwd_t + 2) * each_block_size],
+                                          torch.zeros(self.samples, self.model.z_dim // self.model.block_size).to(device))
+                    if fwd_t == 1:
+                        zt_1_tmp = zt_1
+                    if fwd_t == 2:
+                        zt_1_tmp = concat(torch.zeros(self.samples, self.model.z_dim//self.model.block_size).to(device),
+                                          zt_1[:, (fwd_t - 1) * each_block_size:(fwd_t + 1) * each_block_size])
 
-                    ct_mean[:, fwd_t * each_block_size:(fwd_t + 1) * each_block_size] = c_fwd_latent_mean
-                    ct_lar[:, fwd_t * each_block_size:(fwd_t + 1) * each_block_size] = c_fwd_latent_lar
+                    z_fwd_list[fwd_t] = self.model.z_to_c_fwd_list[fwd_t](zt_1_tmp, z_fwd_list[fwd_t], wt[:, fwd_t])
 
-                ct = Normal(ct_mean, F.softplus(ct_lar) + 1e-5).rsample()
+                z_fwd_all = torch.stack(z_fwd_list, dim=2).view(self.samples, self.model.z_dim)
+                # update weight, w0<...<wd<=1, d means block_size
+                wt = self.model.z_w_function(z_fwd_all)
+                wt = cumsoftmax(wt)
 
-                zt = (1 - wt) * zt_1 + wt * ct
+                zt_prior_mean = self.model.z_mean_prior(z_fwd_all)
+                zt_prior_lar = self.model.z_logvar_prior(z_fwd_all)
+
+                # store the prior of ct_i
+                z_prior = Normal(zt_prior_mean, F.softplus(zt_prior_lar) + 1e-5)
+                zt = z_prior.rsample()
                 zt_dec.append(zt)
+
                 # decode observation
                 zt_1 = zt
+
             zt_dec = torch.stack(zt_dec, dim=1)
             recon_x = self.model.decode_frames(zt_dec)
             recon_x = recon_x.view(16, 3, 64, 64)
@@ -336,6 +354,7 @@ class Trainer(object):
                 self.optimizer.step()
                 losses.append(loss.item())
                 loss_info = 'mse loss is %f, kl loss is %f' % (mse, kl)
+                print('mse loss is %f, kl loss is %f' % (mse, kl))
                 write_log(loss_info, self.log_path)
 
             meanloss = np.mean(losses)
@@ -377,7 +396,7 @@ if __name__ == '__main__':
     FLAGS = parser.parse_args()
     device = torch.device('cuda:%d' % (FLAGS.gpu_id) if torch.cuda.is_available() else 'cpu')
 
-    vae = FullQDisentangledVAE(frames=8, z_dim=32, hidden_dim=512, conv_dim=1024, device=device)
+    vae = FullQDisentangledVAE(frames=FLAGS.frame_size, z_dim=FLAGS.z_dim, hidden_dim=FLAGS.hidden_dim, conv_dim=FLAGS.conv_dim, device=device)
     sprites_train = Sprites('./dataset/lpc-dataset/train/', 6687)
     sprites_test = Sprites('./dataset/lpc-dataset/test/', 873)
     starttime = datetime.datetime.now()

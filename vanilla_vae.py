@@ -6,6 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.nn.init
 import torch.optim as optim
+from GRU_cell import GRUCell
 import numpy as np
 from torch.distributions import Normal, kl_divergence
 import datetime
@@ -48,7 +49,7 @@ class FullQDisentangledVAE(nn.Module):
         self.z_logvar_prior = nn.Linear(self.z_dim, self.z_dim)
 
         #self.z_to_c_fwd = nn.Linear(self.z_dim, self.z_dim)
-        self.z_to_z_fwd = nn.GRUCell(input_size=self.z_dim, hidden_size=self.z_dim)
+        self.z_to_z_fwd = GRUCell(input_size=self.z_dim, hidden_size=self.z_dim)
 
         self.conv1 = nn.Conv2d(3, 256, kernel_size=4, stride=2, padding=1)
         self.conv2 = nn.Conv2d(256, 256, kernel_size=4, stride=2, padding=1)
