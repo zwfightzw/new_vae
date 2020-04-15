@@ -137,8 +137,9 @@ class FullQDisentangledVAE(nn.Module):
         batch_size = lstm_out.shape[0]
         seq_size = lstm_out.shape[1]
         each_block_size = self.z_dim // self.block_size
-        with torch.no_grad():
-            zt_1 = prior_z0.rsample()
+
+        zt_1 = [prior_z0.rsample() for i in range(batch_size)]
+        zt_1 = torch.stack(zt_1, dim=0)
         for t in range(1, seq_size):
 
             if torch.isnan(zt_1).any().item():
@@ -275,7 +276,8 @@ class Trainer(object):
             prior_z0 = torch.distributions.Normal(torch.zeros(self.model.z_dim).to(self.device),
                                                   torch.ones(self.model.z_dim).to(self.device))
 
-            zt_1 = prior_z0.rsample()
+            zt_1 = [prior_z0.rsample() for i in range(self.samples)]
+            zt_1 = torch.stack(zt_1, dim=0)
             zt_dec.append(zt_1)
             for t in range(1, 8):
 
@@ -363,6 +365,7 @@ if __name__ == '__main__':
     # data size
     parser.add_argument('--batch-size', type=int, default=64)
     parser.add_argument('--frame-size', type=int, default=8)
+    parser.add_argument('--nsamples', type=int, default=2)
 
     # optimization
     parser.add_argument('--learn-rate', type=float, default=0.0001)
@@ -397,7 +400,7 @@ if __name__ == '__main__':
     testloader = torch.utils.data.DataLoader(sprites_test, batch_size=1, shuffle=True, num_workers=4)
 
     trainer = Trainer(vae, device, sprites_train, sprites_test, trainloader, testloader, epochs=FLAGS.max_epochs, batch_size=FLAGS.batch_size,
-                      learning_rate=FLAGS.learn_rate, checkpoints='%s/%s-disentangled-vae.model'%(model_path, FLAGS.method), nsamples=2,
+                      learning_rate=FLAGS.learn_rate, checkpoints='%s/%s-disentangled-vae.model'%(model_path, FLAGS.method), nsamples=FLAGS.nsamples,
                       sample_path=log_sample,
                       recon_path=log_recon, log_path = log_path)
     trainer.load_checkpoint()
