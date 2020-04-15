@@ -369,7 +369,7 @@ if __name__ == '__main__':
 
     # optimization
     parser.add_argument('--learn-rate', type=float, default=0.0001)
-    parser.add_argument('--grad-clip', type=float, default=1e10)
+    parser.add_argument('--grad-clip', type=float, default=0.0)
     parser.add_argument('--max-epochs', type=int, default=100)
     parser.add_argument('--gpu_id', type=int, default=0)
 
@@ -412,4 +412,4 @@ if __name__ == '__main__':
     second = (seconds % 3600)%60
     print((endtime - starttime))
     timeStr = "running time: " + str(hours)+ 'hours'+ str(minutes) + 'minutes' + str(second) + "second"
-    write_log(time_dir, log_path)
+    write_log(timeStr, log_path)
