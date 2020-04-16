@@ -276,13 +276,14 @@ class Trainer(object):
             zt_dec.append(zt_1)
             '''
             zt_1 = torch.zeros(self.samples, self.model.z_dim).to(device)
-            z_state = zt_1.new_zeros(self.samples, self.hidden_dim)
+            z_state_hx = zt_1.new_zeros(self.samples, self.model.hidden_dim)
+            z_state_cx = zt_1.new_zeros(self.samples, self.model.hidden_dim)
 
             for t in range(0, 8):
 
                 # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
-                z_fwd, z_state = self.model.z_to_z_fwd(zt_1, z_state)
-                z_prior_fwd = self.model.z_prior_out(z_fwd)
+                z_state_hx, z_state_cx = self.model.z_to_z_fwd(zt_1, (z_state_hx, z_state_cx))
+                z_prior_fwd = self.model.z_prior_out(z_state_hx)
 
                 z_fwd_latent_mean = z_prior_fwd[:, :self.model.z_dim]
                 z_fwd_latent_lar = z_prior_fwd[:, self.model.z_dim:]
