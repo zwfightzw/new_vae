@@ -43,23 +43,12 @@ class FullQDisentangledVAE(nn.Module):
         self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim, 1,
                               bidirectional=True, batch_first=True)
         self.z_rnn = nn.RNN(self.hidden_dim * 2, self.hidden_dim, batch_first=True)
-        self.z_mean = nn.Linear(self.hidden_dim, self.z_dim)
-        self.z_logvar = nn.Linear(self.hidden_dim, self.z_dim)
+        self.z_post_fwd = nn.Linear(self.hidden_dim, self.hidden_dim)
+        self.z_post_out = nn.Linear(self.hidden_dim, self.z_dim*2)
 
-        #self.z_mean_prior = nn.Linear(self.z_dim, self.z_dim)
-        #self.z_logvar_prior = nn.Linear(self.z_dim, self.z_dim)
-        self.z_mean_prior = nn.Sequential(
-            nn.Linear(self.hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, self.z_dim)
-        )
-        self.z_logvar_prior = nn.Sequential(
-            nn.Linear(self.hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, self.z_dim)
-        )
+        self.z_prior_fwd = nn.Linear(self.hidden_dim, self.hidden_dim)
+        self.z_prior_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
 
-        #self.z_to_c_fwd = nn.Linear(self.z_dim, self.z_dim)
         self.z_to_z_fwd = GRUCell(input_size=self.z_dim, hidden_size=self.hidden_dim).to(device)
 
         self.conv1 = nn.Conv2d(3, 256, kernel_size=4, stride=2, padding=1)
@@ -124,6 +113,7 @@ class FullQDisentangledVAE(nn.Module):
     def encode_z(self, x):
         lstm_out, _ = self.z_lstm(x)
         lstm_out, _ = self.z_rnn(lstm_out)
+        lstm_out = self.z_post_fwd(lstm_out)
 
         post_z_list = []
         prior_z_lost = []
@@ -151,50 +141,67 @@ class FullQDisentangledVAE(nn.Module):
         zt_1 = torch.zeros(batch_size, self.z_dim).to(device)
         z_fwd = zt_1.new_zeros(batch_size, self.hidden_dim)
 
+        kl_loss = []
+
         for t in range(0, seq_size):
             # posterior over ct, q(ct|ot,ft)
-            zt_post_mean = self.z_mean(lstm_out[:, t])
-            zt_post_lar = self.z_logvar(lstm_out[:, t])
+            z_post_out = self.z_post_out(lstm_out[:,t])
+            zt_post_mean = z_post_out[:,:self.z_dim]
+            zt_post_lar =z_post_out[:,self.z_dim:]
 
             z_post = Normal(zt_post_mean, F.softplus(zt_post_lar) + 1e-5 )
 
             post_z_list.append(z_post) # keep > 0
 
+            #z_post_sample = z_post.rsample()
+            z_post_sample = z_post.sample()
             # p(xt|zt)
-            zt_obs_list.append(z_post.rsample())
+            zt_obs_list.append(z_post_sample)
 
             # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
             z_fwd = self.z_to_z_fwd(zt_1, z_fwd)
-            z_fwd_latent_mean = self.z_mean_prior(z_fwd)
-            z_fwd_latent_lar = self.z_logvar_prior(z_fwd)
+            z_prior_fwd = self.z_prior_fwd(z_fwd)
+            z_prior_fwd = self.z_prior_out(z_prior_fwd)
+
+            z_fwd_latent_mean = z_prior_fwd[:,:self.z_dim]
+            z_fwd_latent_lar = z_prior_fwd[:,self.z_dim:]
 
             # store the prior of ct_i
             z_prior = Normal(z_fwd_latent_mean, F.softplus(z_fwd_latent_lar)+ 1e-5)
+
+            dynamic_prior_log_prob = z_prior.log_prob(z_post_sample)
+            dynamic_posterior_log_prob = z_post.log_prob(z_post_sample)
+
+            kl_loss.append((dynamic_posterior_log_prob-dynamic_prior_log_prob).mean(dim=1))
+
             prior_z_lost.append(z_prior)
-            zt_1 = z_prior.rsample()
+            #zt_1 = z_prior.rsample()
+            zt_1 = z_prior.sample()
 
         zt_obs_list = torch.stack(zt_obs_list, dim=1)
+        kl_loss_bwd = torch.stack(kl_loss, dim=1).sum(dim=1)
 
-        return post_z_list, prior_z_lost, zt_obs_list
+        return post_z_list, prior_z_lost, zt_obs_list, kl_loss_bwd.mean()
 
     def forward(self, x):
         conv_x = self.encode_frames(x)
 
-        post_zt, prior_zt, z = self.encode_z(conv_x)
+        post_zt, prior_zt, z, kl = self.encode_z(conv_x)
         recon_x = self.decode_frames(z)
-        return post_zt, prior_zt, z, recon_x
+        return post_zt, prior_zt, z, recon_x, kl
 
 def _kl_normal_normal(p, q):
     var_ratio = (p.scale / q.scale).pow(2)
     t1 = ((p.loc - q.loc) / q.scale).pow(2)
     return 0.5 * (var_ratio + t1 - 1 - var_ratio.log())
 
-def loss_fn(original_seq, recon_seq, post_z, prior_z):
+def loss_fn(original_seq, recon_seq, post_z, prior_z, kl_loss):
     mse = []
     for i in range(recon_seq.shape[0]):
         mse.append(F.mse_loss(recon_seq[i], original_seq[i], reduction='sum'))
     mse = torch.stack(mse)
     # compute kl related to states, kl(q(ct|ot,ft)||p(ct|zt-1)) and kl(q(z0|f0)||N(0,1))
+    '''
     kl_z_list = []
     for t in range(len(post_z)):
         if torch.isnan(post_z[t].mean).any().item() or torch.isnan(post_z[t].scale).any().item():
@@ -207,8 +214,9 @@ def loss_fn(original_seq, recon_seq, post_z, prior_z):
         kl_obs_state = _kl_normal_normal(prior_z[t], post_z[t]).sum(-1).mean()
         kl_z_list.append(kl_obs_state)
     kld_z = torch.stack(kl_z_list)
-    mse_loss = mse.mean()
     kl_loss = kld_z.sum()
+    '''
+    mse_loss = mse.mean()
 
     return mse_loss + kl_loss, mse_loss.item(), kl_loss.item()
 
@@ -275,10 +283,14 @@ class Trainer(object):
 
                 # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
                 z_fwd = self.model.z_to_z_fwd(zt_1, z_fwd)
-                c_fwd_latent_mean = self.model.z_mean_prior(z_fwd)
-                c_fwd_latent_lar = self.model.z_logvar_prior(z_fwd)
+                z_prior_fwd = self.model.z_prior_fwd(z_fwd)
+                z_prior_fwd = self.model.z_prior_out(z_prior_fwd)
 
-                zt = Normal(c_fwd_latent_mean, F.softplus(c_fwd_latent_lar) + 1e-5).rsample()
+                z_fwd_latent_mean = z_prior_fwd[:, :self.model.z_dim]
+                z_fwd_latent_lar = z_prior_fwd[:, self.model.z_dim:]
+
+                #zt = Normal(z_fwd_latent_mean, F.softplus(z_fwd_latent_lar) + 1e-5).rsample()
+                zt = Normal(z_fwd_latent_mean, F.softplus(z_fwd_latent_lar) + 1e-5).sample()
 
                 zt_dec.append(zt)
                 zt_1 = zt
@@ -289,7 +301,7 @@ class Trainer(object):
 
     def recon_frame(self, epoch, original):
         with torch.no_grad():
-            _, _, _, recon = self.model(original)
+            _, _, _, recon, _ = self.model(original)
             image = torch.cat((original, recon), dim=0)
             print(image.shape)
             image = image.view(16, 3, 64, 64)
@@ -297,7 +309,6 @@ class Trainer(object):
 
     def train_model(self):
         self.model.train()
-
         write_log(self.model.z_to_z_fwd, self.log_path)
         for epoch in range(self.start_epoch, self.epochs):
             losses = []
@@ -305,8 +316,8 @@ class Trainer(object):
             for i, data in enumerate(self.trainloader, 1):
                 data = data.to(device)
                 self.optimizer.zero_grad()
-                post_z, prior_z, z, recon_x = self.model(data)
-                loss, mse, kl = loss_fn(data, recon_x, post_z, prior_z)
+                post_z, prior_z, z, recon_x, kl_loss = self.model(data)
+                loss, mse, kl = loss_fn(data, recon_x, post_z, prior_z, kl_loss)
                 loss.backward()
                 if self.grad_clip > 0.0:
                     nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
@@ -354,6 +365,9 @@ if __name__ == '__main__':
     parser.add_argument('--gpu_id', type=int, default=1)
 
     FLAGS = parser.parse_args()
+    np.random.seed(FLAGS.seed)
+    torch.manual_seed(FLAGS.seed)
+    torch.cuda.manual_seed(FLAGS.seed)
     device = torch.device('cuda:%d'%(FLAGS.gpu_id) if torch.cuda.is_available() else 'cpu')
 
     vae = FullQDisentangledVAE(frames=FLAGS.frame_size, z_dim=FLAGS.z_dim, hidden_dim=FLAGS.hidden_dim, conv_dim=FLAGS.conv_dim, device=device)
