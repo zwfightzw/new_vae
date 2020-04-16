@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.nn.init
 import torch.optim as optim
-from GRU_cell import GRUCell
+from RNN_cell import GRUCell
 import numpy as np
 from torch.distributions import Normal, kl_divergence
 import datetime

@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.nn.init
 import torch.optim as optim
-from GRU_cell import GRUCell
+from RNN_cell import GRUCell, LSTMCell
 import numpy as np
 from torch.distributions import Normal, kl_divergence
 import datetime
@@ -46,10 +46,9 @@ class FullQDisentangledVAE(nn.Module):
         self.z_post_fwd = nn.Linear(self.hidden_dim, self.hidden_dim)
         self.z_post_out = nn.Linear(self.hidden_dim, self.z_dim*2)
 
-        self.z_prior_fwd = nn.Linear(self.hidden_dim, self.hidden_dim)
         self.z_prior_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
 
-        self.z_to_z_fwd = GRUCell(input_size=self.z_dim, hidden_size=self.hidden_dim).to(device)
+        self.z_to_z_fwd = nn.LSTMCell(input_size=self.z_dim, hidden_size=self.hidden_dim).to(device)
 
         self.conv1 = nn.Conv2d(3, 256, kernel_size=4, stride=2, padding=1)
         self.conv2 = nn.Conv2d(256, 256, kernel_size=4, stride=2, padding=1)
@@ -139,7 +138,8 @@ class FullQDisentangledVAE(nn.Module):
         zt_1 = torch.stack(zt_1, dim=0)
         '''
         zt_1 = torch.zeros(batch_size, self.z_dim).to(device)
-        z_fwd = zt_1.new_zeros(batch_size, self.hidden_dim)
+        z_state_hx = zt_1.new_zeros(batch_size, self.hidden_dim)
+        z_state_cx = zt_1.new_zeros(batch_size, self.hidden_dim)
 
         kl_loss = []
 
@@ -159,9 +159,8 @@ class FullQDisentangledVAE(nn.Module):
             zt_obs_list.append(z_post_sample)
 
             # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
-            z_fwd = self.z_to_z_fwd(zt_1, z_fwd)
-            z_prior_fwd = self.z_prior_fwd(z_fwd)
-            z_prior_fwd = self.z_prior_out(z_prior_fwd)
+            z_state_hx,  z_state_cx = self.z_to_z_fwd(zt_1, (z_state_hx, z_state_cx))
+            z_prior_fwd = self.z_prior_out(z_state_hx)
 
             z_fwd_latent_mean = z_prior_fwd[:,:self.z_dim]
             z_fwd_latent_lar = z_prior_fwd[:,self.z_dim:]
@@ -277,14 +276,13 @@ class Trainer(object):
             zt_dec.append(zt_1)
             '''
             zt_1 = torch.zeros(self.samples, self.model.z_dim).to(device)
-            z_fwd = zt_1.new_zeros(self.samples, self.model.hidden_dim)
+            z_state = zt_1.new_zeros(self.samples, self.hidden_dim)
 
             for t in range(0, 8):
 
                 # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
-                z_fwd = self.model.z_to_z_fwd(zt_1, z_fwd)
-                z_prior_fwd = self.model.z_prior_fwd(z_fwd)
-                z_prior_fwd = self.model.z_prior_out(z_prior_fwd)
+                z_fwd, z_state = self.model.z_to_z_fwd(zt_1, z_state)
+                z_prior_fwd = self.model.z_prior_out(z_fwd)
 
                 z_fwd_latent_mean = z_prior_fwd[:, :self.model.z_dim]
                 z_fwd_latent_lar = z_prior_fwd[:, self.model.z_dim:]
@@ -390,8 +388,8 @@ if __name__ == '__main__':
 
     write_log(FLAGS, log_path)
 
-    trainloader = torch.utils.data.DataLoader(sprites_train, batch_size=FLAGS.batch_size, shuffle=True, num_workers=4)
-    testloader = torch.utils.data.DataLoader(sprites_test, batch_size=1, shuffle=True, num_workers=4)
+    trainloader = torch.utils.data.DataLoader(sprites_train, batch_size=FLAGS.batch_size, shuffle=True, num_workers=1)
+    testloader = torch.utils.data.DataLoader(sprites_test, batch_size=1, shuffle=True, num_workers=1)
 
     trainer = Trainer(vae, device, sprites_train, sprites_test, trainloader, testloader, epochs=FLAGS.max_epochs, batch_size=FLAGS.batch_size,
                       learning_rate=FLAGS.learn_rate, checkpoints='%s/%s-disentangled-vae.model'%(model_path, FLAGS.method), nsamples=FLAGS.nsamples,
