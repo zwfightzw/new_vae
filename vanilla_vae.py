@@ -308,6 +308,7 @@ class Trainer(object):
 
     def train_model(self):
         self.model.train()
+
         write_log(self.model.z_to_z_fwd, self.log_path)
         for epoch in range(self.start_epoch, self.epochs):
             losses = []
