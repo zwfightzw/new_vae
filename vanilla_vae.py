@@ -40,8 +40,9 @@ class FullQDisentangledVAE(nn.Module):
         self.hidden_dim = hidden_dim
         self.device = device
 
-        self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim//2, 1,
+        self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim, 1,
                               bidirectional=True, batch_first=True)
+        self.z_rnn = nn.RNN(self.hidden_dim * 2, self.hidden_dim, batch_first=True)
         self.z_mean = nn.Linear(self.hidden_dim, self.z_dim)
         self.z_logvar = nn.Linear(self.hidden_dim, self.z_dim)
 
@@ -112,6 +113,7 @@ class FullQDisentangledVAE(nn.Module):
 
     def encode_z(self, x):
         lstm_out, _ = self.z_lstm(x)
+        lstm_out = self.z_rnn(lstm_out)
 
         post_z_list = []
         prior_z_lost = []
@@ -256,7 +258,7 @@ class Trainer(object):
             zt_1 = torch.stack(zt_1, dim=0)
             zt_dec.append(zt_1)
             '''
-            zt_1 = torch.zeros(self.samples, self.z_dim).to(device)
+            zt_1 = torch.zeros(self.samples, self.model.z_dim).to(device)
             z_fwd = zt_1.new_zeros(self.samples, self.model.z_dim)
 
             for t in range(0, 8):
