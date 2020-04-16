@@ -113,7 +113,7 @@ class FullQDisentangledVAE(nn.Module):
 
     def encode_z(self, x):
         lstm_out, _ = self.z_lstm(x)
-        lstm_out = self.z_rnn(lstm_out)
+        lstm_out, _ = self.z_rnn(lstm_out)
 
         post_z_list = []
         prior_z_lost = []
