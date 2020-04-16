@@ -50,13 +50,24 @@ class FullQDisentangledVAE(nn.Module):
         self.z_mean = nn.Linear(self.hidden_dim, self.z_dim)
         self.z_logvar = nn.Linear(self.hidden_dim, self.z_dim)
 
-        self.z_mean_prior = nn.Linear(self.z_dim, self.z_dim)
-        self.z_logvar_prior = nn.Linear(self.z_dim, self.z_dim)
+        self.z_mean_prior = nn.Sequential(
+            nn.Linear(self.hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, self.z_dim)
+        )
+        self.z_logvar_prior = nn.Sequential(
+            nn.Linear(self.hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, self.z_dim)
+        )
 
-        self.z_to_c_fwd_list = [GRUCell(input_size=self.z_dim, hidden_size=self.z_dim//self.block_size).to(device)
+        #self.z_mean_prior = nn.Linear(self.z_dim, self.z_dim)
+        #self.z_logvar_prior = nn.Linear(self.z_dim, self.z_dim)
+
+        self.z_to_c_fwd_list = [GRUCell(input_size=self.z_dim, hidden_size=self.hidden_dim//self.block_size).to(device)
                                 for i in range(self.block_size)]
 
-        self.z_w_function = nn.Linear(self.z_dim, self.block_size)
+        self.z_w_function = nn.Linear(self.hidden_dim, self.block_size)
 
         self.conv1 = nn.Conv2d(3, 256, kernel_size=4, stride=2, padding=1)
         self.conv2 = nn.Conv2d(256, 256, kernel_size=4, stride=2, padding=1)
@@ -146,7 +157,7 @@ class FullQDisentangledVAE(nn.Module):
         zt_1 = torch.stack(zt_1, dim=0)
         '''
         zt_1 = torch.zeros(batch_size, self.z_dim).to(device)
-        z_fwd_list = [torch.zeros(batch_size, each_block_size).to(device) for i in range(self.block_size)]
+        z_fwd_list = [torch.zeros(batch_size, self.hidden_dim//self.block_size).to(device) for i in range(self.block_size)]
         # init wt
         wt = torch.ones(batch_size, self.block_size).to(device)
 
@@ -173,7 +184,7 @@ class FullQDisentangledVAE(nn.Module):
 
                 z_fwd_list[fwd_t] = self.z_to_c_fwd_list[fwd_t](zt_1_tmp, z_fwd_list[fwd_t],w=wt[:,fwd_t].view(-1,1))
 
-            z_fwd_all = torch.stack(z_fwd_list, dim=2).view(batch_size, self.z_dim)
+            z_fwd_all = torch.stack(z_fwd_list, dim=2).view(batch_size, self.hidden_dim)
             # update weight, w0<...<wd<=1, d means block_size
             wt = self.z_w_function(z_fwd_all)
             wt = cumsoftmax(wt)
@@ -292,7 +303,7 @@ class Trainer(object):
             zt_dec.append(zt_1)
             '''
             zt_1 = torch.zeros(self.samples, self.model.z_dim).to(device)
-            z_fwd_list = [torch.zeros(self.samples, each_block_size).to(device) for i in range(self.model.block_size)]
+            z_fwd_list = [torch.zeros(self.samples, self.model.hidden_dim//self.model.block_size).to(device) for i in range(self.model.block_size)]
             # init wt
             wt = torch.ones(self.samples, self.model.block_size).to(device)
 
@@ -311,7 +322,7 @@ class Trainer(object):
 
                     z_fwd_list[fwd_t] = self.model.z_to_c_fwd_list[fwd_t](zt_1_tmp, z_fwd_list[fwd_t], wt[:, fwd_t].view(-1,1))
 
-                z_fwd_all = torch.stack(z_fwd_list, dim=2).view(self.samples, self.model.z_dim)
+                z_fwd_all = torch.stack(z_fwd_list, dim=2).view(self.samples, self.model.hidden_dim)
                 # update weight, w0<...<wd<=1, d means block_size
                 wt = self.model.z_w_function(z_fwd_all)
                 wt = cumsoftmax(wt)
@@ -383,7 +394,7 @@ if __name__ == '__main__':
     parser.add_argument('--dset_name', type=str, default='moving_mnist')
     # state size
     parser.add_argument('--z-dim', type=int, default=36)
-    parser.add_argument('--hidden-dim', type=int, default=512)
+    parser.add_argument('--hidden-dim', type=int, default=384)
     parser.add_argument('--conv-dim', type=int, default=1024)
     # data size
     parser.add_argument('--batch-size', type=int, default=64)
