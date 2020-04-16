@@ -356,7 +356,7 @@ if __name__ == '__main__':
     FLAGS = parser.parse_args()
     device = torch.device('cuda:%d'%(FLAGS.gpu_id) if torch.cuda.is_available() else 'cpu')
 
-    vae = FullQDisentangledVAE(frames=8, z_dim=32, hidden_dim=512, conv_dim=1024, device=device)
+    vae = FullQDisentangledVAE(frames=FLAGS.frame_size, z_dim=FLAGS.z_dim, hidden_dim=FLAGS.hidden_dim, conv_dim=FLAGS.conv_dim, device=device)
     sprites_train = Sprites('./dataset/lpc-dataset/train/', 6687)
     sprites_test = Sprites('./dataset/lpc-dataset/test/', 873)
     starttime = datetime.datetime.now()
