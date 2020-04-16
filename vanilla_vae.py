@@ -116,6 +116,9 @@ class FullQDisentangledVAE(nn.Module):
         post_z_list = []
         prior_z_lost = []
         zt_obs_list = []
+        batch_size = lstm_out.shape[0]
+        seq_size = lstm_out.shape[1]
+        '''
         zt_1_mean = self.z_mean(lstm_out[:,0])
         zt_1_lar = self.z_logvar(lstm_out[:,0])
 
@@ -129,17 +132,14 @@ class FullQDisentangledVAE(nn.Module):
         zt_1_dec = post_z_1.rsample()
 
         zt_obs_list.append(zt_1_dec)
-        batch_size = lstm_out.shape[0]
-        seq_size = lstm_out.shape[1]
+        
         zt_1 = [prior_z0.rsample() for i in range(batch_size)]
         zt_1 = torch.stack(zt_1, dim=0)
-        #zt_1 = torch.zeros(batch_size, self.z_dim).to(device)
-
+        '''
+        zt_1 = torch.zeros(batch_size, self.z_dim).to(device)
         z_fwd = zt_1.new_zeros(batch_size, self.z_dim)
 
-        for t in range(1, seq_size):
-            if torch.isnan(zt_1).any().item():
-                print('zt-1 in process is nan and sequence num is %d'%(t))
+        for t in range(0, seq_size):
             # posterior over ct, q(ct|ot,ft)
             zt_post_mean = self.z_mean(lstm_out[:, t])
             zt_post_lar = self.z_logvar(lstm_out[:, t])
@@ -248,15 +248,18 @@ class Trainer(object):
         with torch.no_grad():
 
             zt_dec = []
+            '''
             prior_z0 = torch.distributions.Normal(torch.zeros(self.model.z_dim).to(self.device),
                                                   torch.ones(self.model.z_dim).to(self.device))
 
             zt_1 = [prior_z0.rsample() for i in range(self.samples)]
             zt_1 = torch.stack(zt_1, dim=0)
             zt_dec.append(zt_1)
+            '''
+            zt_1 = torch.zeros(self.samples, self.z_dim).to(device)
             z_fwd = zt_1.new_zeros(self.samples, self.model.z_dim)
 
-            for t in range(1, 8):
+            for t in range(0, 8):
 
                 # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
                 z_fwd = self.model.z_to_z_fwd(zt_1, z_fwd)

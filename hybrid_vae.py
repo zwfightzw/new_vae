@@ -122,6 +122,10 @@ class FullQDisentangledVAE(nn.Module):
         post_z_list = []
         prior_z_lost = []
         zt_obs_list = []
+        batch_size = lstm_out.shape[0]
+        seq_size = lstm_out.shape[1]
+        each_block_size = self.z_dim // self.block_size
+        '''
         zt_1_mean = self.z_mean(lstm_out[:,0])
         zt_1_lar = self.z_logvar(lstm_out[:,0])
 
@@ -136,20 +140,15 @@ class FullQDisentangledVAE(nn.Module):
         zt_1_dec = post_z_1.rsample()
 
         zt_obs_list.append(zt_1_dec)
-        batch_size = lstm_out.shape[0]
-        seq_size = lstm_out.shape[1]
-        each_block_size = self.z_dim // self.block_size
-
         zt_1 = [prior_z0.rsample() for i in range(batch_size)]
         zt_1 = torch.stack(zt_1, dim=0)
+        '''
+        zt_1 = torch.zeros(batch_size, self.z_dim).to(device)
+        z_fwd_list = [torch.zeros(batch_size, each_block_size).to(device) for i in range(self.block_size)]
         # init wt
         wt = torch.ones(batch_size, self.block_size).to(device)
 
-        for t in range(1, seq_size):
-
-            if torch.isnan(zt_1).any().item():
-                print('zt-1 in process is nan and sequence num is %d'%(t))
-
+        for t in range(0, seq_size):
             # posterior over ct, q(ct|ot,ft)
             zt_post_mean = self.z_mean(lstm_out[:, t])
             zt_post_lar = self.z_logvar(lstm_out[:, t])
@@ -160,7 +159,6 @@ class FullQDisentangledVAE(nn.Module):
             # p(xt|zt)
             zt_obs_list.append(z_post.rsample())
 
-            z_fwd_list = [torch.zeros(batch_size, each_block_size).to(device) for i in range(self.block_size)]
 
             for fwd_t in range(self.block_size):
                 # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
@@ -283,18 +281,20 @@ class Trainer(object):
         with torch.no_grad():
             each_block_size = self.model.z_dim // self.model.block_size
             zt_dec = []
+            '''
             prior_z0 = torch.distributions.Normal(torch.zeros(self.model.z_dim).to(self.device),
                                                   torch.ones(self.model.z_dim).to(self.device))
 
             zt_1 = [prior_z0.rsample() for i in range(self.samples)]
             zt_1 = torch.stack(zt_1, dim=0)
             zt_dec.append(zt_1)
+            '''
+            zt_1 = torch.zeros(self.samples, self.model.z_dim).to(device)
+            z_fwd_list = [torch.zeros(self.samples, each_block_size).to(device) for i in range(self.model.block_size)]
             # init wt
             wt = torch.ones(self.samples, self.model.block_size).to(device)
 
-            for t in range(1, self.model.frames):
-
-                z_fwd_list = [torch.zeros(self.samples, each_block_size).to(device) for i in range(self.model.block_size)]
+            for t in range(0, self.model.frames):
 
                 for fwd_t in range(self.model.block_size):
                     # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
