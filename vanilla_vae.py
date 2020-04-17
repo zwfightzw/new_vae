@@ -56,6 +56,7 @@ class FullQDisentangledVAE(nn.Module):
         self.z_post_fwd = nn.Linear(self.hidden_dim, self.hidden_dim)
         self.z_post_out = nn.Linear(self.hidden_dim, self.z_dim*2)
 
+        self.z_prior_fwd = nn.Linear(self.hidden_dim, self.hidden_dim)
         self.z_prior_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
 
         #self.z_to_z_fwd = LSTMCell(input_size=self.z_dim, hidden_size=self.hidden_dim).to(device)
@@ -176,7 +177,8 @@ class FullQDisentangledVAE(nn.Module):
             # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
             #z_state_hx,  z_state_cx = self.z_to_z_fwd(zt_1, (z_state_hx, z_state_cx))
             z_state_hx = self.z_to_z_fwd(zt_1, z_state_hx)
-            z_prior_fwd = self.z_prior_out(z_state_hx)
+            z_prior_fwd = self.z_prior_fwd(z_state_hx)
+            z_prior_fwd = self.z_prior_out(z_prior_fwd)
 
             z_fwd_latent_mean = z_prior_fwd[:,:self.z_dim]
             z_fwd_latent_lar = z_prior_fwd[:,self.z_dim:]
@@ -300,7 +302,9 @@ class Trainer(object):
                 # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
                 #z_state_hx, z_state_cx = self.model.z_to_z_fwd(zt_1, (z_state_hx, z_state_cx))
                 z_state_hx = self.model.z_to_z_fwd(zt_1, z_state_hx)
-                z_prior_fwd = self.model.z_prior_out(z_state_hx)
+
+                z_prior_fwd = self.model.z_prior_fwd(z_state_hx)
+                z_prior_fwd = self.model.z_prior_out(z_prior_fwd)
 
                 z_fwd_latent_mean = z_prior_fwd[:, :self.model.z_dim]
                 z_fwd_latent_lar = z_prior_fwd[:, self.model.z_dim:]
@@ -377,8 +381,8 @@ if __name__ == '__main__':
 
     # optimization
     parser.add_argument('--learn-rate', type=float, default=0.0002)
-    parser.add_argument('--grad-clip', type=float, default=10.0)
-    parser.add_argument('--max-epochs', type=int, default=100)
+    parser.add_argument('--grad-clip', type=float, default=0.0)
+    parser.add_argument('--max-epochs', type=int, default=200)
     parser.add_argument('--gpu_id', type=int, default=1)
 
     FLAGS = parser.parse_args()
