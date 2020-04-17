@@ -168,8 +168,8 @@ class FullQDisentangledVAE(nn.Module):
 
             post_z_list.append(z_post) # keep > 0
 
-            #z_post_sample = z_post.rsample()
-            z_post_sample = z_post.sample()
+            z_post_sample = z_post.rsample()
+            #z_post_sample = z_post.sample()
             # p(xt|zt)
             zt_obs_list.append(z_post_sample)
 
@@ -190,8 +190,8 @@ class FullQDisentangledVAE(nn.Module):
             kl_loss.append((dynamic_posterior_log_prob-dynamic_prior_log_prob).mean(dim=1))
 
             prior_z_lost.append(z_prior)
-            #zt_1 = z_prior.rsample()
-            zt_1 = z_prior.sample()
+            zt_1 = z_prior.rsample()
+            #zt_1 = z_prior.sample()
 
 
         zt_obs_list = torch.stack(zt_obs_list, dim=1)
@@ -217,7 +217,7 @@ def loss_fn(original_seq, recon_seq, post_z, prior_z, kl_loss):
         mse.append(F.mse_loss(recon_seq[i], original_seq[i], reduction='sum'))
     mse = torch.stack(mse)
     # compute kl related to states, kl(q(ct|ot,ft)||p(ct|zt-1)) and kl(q(z0|f0)||N(0,1))
-    '''
+
     kl_z_list = []
     for t in range(len(post_z)):
         if torch.isnan(post_z[t].mean).any().item() or torch.isnan(post_z[t].scale).any().item():
@@ -231,7 +231,7 @@ def loss_fn(original_seq, recon_seq, post_z, prior_z, kl_loss):
         kl_z_list.append(kl_obs_state)
     kld_z = torch.stack(kl_z_list)
     kl_loss = kld_z.sum()
-    '''
+
     mse_loss = mse.mean()
 
     return mse_loss + kl_loss, mse_loss.item(), kl_loss.item()
@@ -306,8 +306,8 @@ class Trainer(object):
                 z_fwd_latent_mean = z_prior_fwd[:, :self.model.z_dim]
                 z_fwd_latent_lar = z_prior_fwd[:, self.model.z_dim:]
 
-                #zt = Normal(z_fwd_latent_mean, F.softplus(z_fwd_latent_lar) + 1e-5).rsample()
-                zt = Normal(z_fwd_latent_mean, F.softplus(z_fwd_latent_lar) + 1e-5).sample()
+                zt = Normal(z_fwd_latent_mean, F.softplus(z_fwd_latent_lar) + 1e-5).rsample()
+                #zt = Normal(z_fwd_latent_mean, F.softplus(z_fwd_latent_lar) + 1e-5).sample()
 
                 zt_dec.append(zt)
                 zt_1 = zt
