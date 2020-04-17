@@ -94,4 +94,4 @@ class LSTMCell(nn.Module):
 
         hy = torch.mul(outgate, F.tanh(cy))
 
-        return hy, (hy, cy)
+        return hy, cy

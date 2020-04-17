@@ -44,15 +44,15 @@ class FullQDisentangledVAE(nn.Module):
                               bidirectional=True, batch_first=True)
         for name, param in self.z_lstm.named_parameters():
             if 'bias' in name:
-                nn.init.constant(param, 0.0)
+                nn.init.constant_(param, 0)
             elif 'weight' in name:
-                nn.init.xavier_normal(param)
+                nn.init.kaiming_normal_(param, nonlinearity='relu')
         self.z_rnn = nn.RNN(self.hidden_dim * 2, self.hidden_dim, batch_first=True)
         for name, param in self.z_lstm.named_parameters():
             if 'bias' in name:
-                nn.init.constant(param, 0.0)
+                nn.init.constant_(param, 0)
             elif 'weight' in name:
-                nn.init.xavier_normal(param)
+                nn.init.kaiming_normal_(param, nonlinearity='relu')
         self.z_post_fwd = nn.Linear(self.hidden_dim, self.hidden_dim)
         self.z_post_out = nn.Linear(self.hidden_dim, self.z_dim*2)
 
@@ -190,6 +190,7 @@ class FullQDisentangledVAE(nn.Module):
             prior_z_lost.append(z_prior)
             #zt_1 = z_prior.rsample()
             zt_1 = z_prior.sample()
+
 
         zt_obs_list = torch.stack(zt_obs_list, dim=1)
         kl_loss_bwd = torch.stack(kl_loss, dim=1).sum(dim=1)
