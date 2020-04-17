@@ -21,8 +21,7 @@ class GRUCell(nn.Module):
         for m in self.modules():
             # w.data.uniform_(-std, std)
             if isinstance(m, nn.Linear):
-                nn.init.kaiming_normal_(m.weight,
-                                        nonlinearity='relu')  # Change nonlinearity to 'leaky_relu' if you switch
+                nn.init.kaiming_normal_(m.weight, nonlinearity='relu')  # Change nonlinearity to 'leaky_relu' if you switch
                 nn.init.constant_(m.bias, 0)
 
     def forward(self, x, hidden, w=None):
