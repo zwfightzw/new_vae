@@ -441,6 +441,7 @@ if __name__ == '__main__':
         os.makedirs(log_sample)
 
     write_log(FLAGS, log_path)
+    write_log(vae, log_path)
 
     trainloader = torch.utils.data.DataLoader(sprites_train, batch_size=FLAGS.batch_size, shuffle=True, num_workers=4)
     testloader = torch.utils.data.DataLoader(sprites_test, batch_size=1, shuffle=True, num_workers=4)
