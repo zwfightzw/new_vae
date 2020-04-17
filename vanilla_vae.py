@@ -127,7 +127,7 @@ class FullQDisentangledVAE(nn.Module):
     def encode_z(self, x):
         lstm_out, _ = self.z_lstm(x)
         lstm_out, _ = self.z_rnn(lstm_out)
-        lstm_out = self.z_post_fwd(lstm_out)
+        #lstm_out = self.z_post_fwd(lstm_out)
 
         post_z_list = []
         prior_z_lost = []
@@ -378,7 +378,7 @@ if __name__ == '__main__':
 
     # optimization
     parser.add_argument('--learn-rate', type=float, default=0.0001)
-    parser.add_argument('--grad-clip', type=float, default=0.0)
+    parser.add_argument('--grad-clip', type=float, default=10.0)
     parser.add_argument('--max-epochs', type=int, default=100)
     parser.add_argument('--gpu_id', type=int, default=1)
 
