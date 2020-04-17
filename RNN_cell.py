@@ -20,9 +20,10 @@ class GRUCell(nn.Module):
     def reset_parameters(self):
         for m in self.modules():
             # w.data.uniform_(-std, std)
-            nn.init.kaiming_normal_(m.weight,
-                                    nonlinearity='relu')  # Change nonlinearity to 'leaky_relu' if you switch
-            nn.init.constant_(m.bias, 0)
+            if isinstance(m, nn.Linear):
+                nn.init.kaiming_normal_(m.weight,
+                                        nonlinearity='relu')  # Change nonlinearity to 'leaky_relu' if you switch
+                nn.init.constant_(m.bias, 0)
 
     def forward(self, x, hidden, w=None):
         x = x.view(-1, x.size(1))
@@ -81,7 +82,7 @@ class LSTMCell(nn.Module):
 
         gates = self.x2h(x) + self.h2h(hx)
 
-        gates = gates.squeeze()
+        #gates = gates.squeeze()
 
         ingate, forgetgate, cellgate, outgate = gates.chunk(4, 1)
 

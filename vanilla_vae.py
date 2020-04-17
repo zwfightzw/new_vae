@@ -58,7 +58,8 @@ class FullQDisentangledVAE(nn.Module):
 
         self.z_prior_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
 
-        self.z_to_z_fwd = LSTMCell(input_size=self.z_dim, hidden_size=self.hidden_dim).to(device)
+        #self.z_to_z_fwd = LSTMCell(input_size=self.z_dim, hidden_size=self.hidden_dim).to(device)
+        self.z_to_z_fwd = GRUCell(input_size=self.z_dim, hidden_size=self.hidden_dim).to(device)
 
         self.conv1 = nn.Conv2d(3, 256, kernel_size=4, stride=2, padding=1)
         self.conv2 = nn.Conv2d(256, 256, kernel_size=4, stride=2, padding=1)
@@ -173,7 +174,8 @@ class FullQDisentangledVAE(nn.Module):
             zt_obs_list.append(z_post_sample)
 
             # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
-            z_state_hx,  z_state_cx = self.z_to_z_fwd(zt_1, (z_state_hx, z_state_cx))
+            #z_state_hx,  z_state_cx = self.z_to_z_fwd(zt_1, (z_state_hx, z_state_cx))
+            z_state_hx = self.z_to_z_fwd(zt_1, z_state_hx)
             z_prior_fwd = self.z_prior_out(z_state_hx)
 
             z_fwd_latent_mean = z_prior_fwd[:,:self.z_dim]
@@ -297,7 +299,8 @@ class Trainer(object):
             for t in range(0, 8):
 
                 # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
-                z_state_hx, z_state_cx = self.model.z_to_z_fwd(zt_1, (z_state_hx, z_state_cx))
+                #z_state_hx, z_state_cx = self.model.z_to_z_fwd(zt_1, (z_state_hx, z_state_cx))
+                z_state_hx = self.model.z_to_z_fwd(zt_1, z_state_hx)
                 z_prior_fwd = self.model.z_prior_out(z_state_hx)
 
                 z_fwd_latent_mean = z_prior_fwd[:, :self.model.z_dim]
