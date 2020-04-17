@@ -282,14 +282,6 @@ class Trainer(object):
             torchvision.utils.save_image(image, '%s/epoch%d.png' % (self.recon_path, epoch))
 
     def train_model(self):
-
-        self.model.eval()
-        self.sample_frames(0 + 1)
-        sample = self.test[int(torch.randint(0, len(self.test), (1,)).item())]
-        sample = torch.unsqueeze(sample, 0)
-        sample = sample.to(self.device)
-        self.recon_frame(0 + 1, sample)
-
         self.model.train()
 
         for epoch in range(self.start_epoch, self.epochs):
