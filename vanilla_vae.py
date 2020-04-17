@@ -330,7 +330,6 @@ class Trainer(object):
     def train_model(self):
         self.model.train()
 
-        write_log(self.model.z_to_z_fwd, self.log_path)
         for epoch in range(self.start_epoch, self.epochs):
             losses = []
             write_log("Running Epoch : {}".format(epoch + 1), self.log_path)
@@ -392,6 +391,7 @@ if __name__ == '__main__':
     device = torch.device('cuda:%d'%(FLAGS.gpu_id) if torch.cuda.is_available() else 'cpu')
 
     vae = FullQDisentangledVAE(frames=FLAGS.frame_size, z_dim=FLAGS.z_dim, hidden_dim=FLAGS.hidden_dim, conv_dim=FLAGS.conv_dim, device=device)
+    print(vae)
     sprites_train = Sprites('./dataset/lpc-dataset/train/', 6687)
     sprites_test = Sprites('./dataset/lpc-dataset/test/', 873)
     starttime = datetime.datetime.now()
@@ -410,6 +410,7 @@ if __name__ == '__main__':
         os.makedirs(log_sample)
 
     write_log(FLAGS, log_path)
+    write_log(vae, log_path)
 
     trainloader = torch.utils.data.DataLoader(sprites_train, batch_size=FLAGS.batch_size, shuffle=True, num_workers=4)
     testloader = torch.utils.data.DataLoader(sprites_test, batch_size=1, shuffle=True, num_workers=4)
