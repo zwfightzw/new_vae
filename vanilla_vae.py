@@ -42,13 +42,23 @@ class FullQDisentangledVAE(nn.Module):
 
         self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim, 1,
                               bidirectional=True, batch_first=True)
+        for name, param in self.z_lstm.named_parameters():
+            if 'bias' in name:
+                nn.init.constant(param, 0.0)
+            elif 'weight' in name:
+                nn.init.xavier_normal(param)
         self.z_rnn = nn.RNN(self.hidden_dim * 2, self.hidden_dim, batch_first=True)
+        for name, param in self.z_lstm.named_parameters():
+            if 'bias' in name:
+                nn.init.constant(param, 0.0)
+            elif 'weight' in name:
+                nn.init.xavier_normal(param)
         self.z_post_fwd = nn.Linear(self.hidden_dim, self.hidden_dim)
         self.z_post_out = nn.Linear(self.hidden_dim, self.z_dim*2)
 
         self.z_prior_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
 
-        self.z_to_z_fwd = nn.LSTMCell(input_size=self.z_dim, hidden_size=self.hidden_dim).to(device)
+        self.z_to_z_fwd = LSTMCell(input_size=self.z_dim, hidden_size=self.hidden_dim).to(device)
 
         self.conv1 = nn.Conv2d(3, 256, kernel_size=4, stride=2, padding=1)
         self.conv2 = nn.Conv2d(256, 256, kernel_size=4, stride=2, padding=1)
@@ -82,9 +92,13 @@ class FullQDisentangledVAE(nn.Module):
             if isinstance(m, nn.BatchNorm2d) or isinstance(m, nn.BatchNorm1d):
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 1)
-            elif isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d) or isinstance(m, nn.Linear):
+            elif isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d):
                 nn.init.kaiming_normal_(m.weight,
                                         nonlinearity='relu')  # Change nonlinearity to 'leaky_relu' if you switch
+            elif isinstance(m, nn.Linear):
+                nn.init.kaiming_normal_(m.weight,
+                                        nonlinearity='relu')
+                nn.init.constant_(m.bias, 0)
         nn.init.xavier_normal_(self.deconv1.weight, nn.init.calculate_gain('tanh'))
 
     def encode_frames(self, x):

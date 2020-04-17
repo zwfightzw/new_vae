@@ -18,9 +18,11 @@ class GRUCell(nn.Module):
         self.reset_parameters()
 
     def reset_parameters(self):
-        std = 1.0 / math.sqrt(self.hidden_size)
-        for w in self.parameters():
-            w.data.uniform_(-std, std)
+        for m in self.modules():
+            # w.data.uniform_(-std, std)
+            nn.init.kaiming_normal_(m.weight,
+                                    nonlinearity='relu')  # Change nonlinearity to 'leaky_relu' if you switch
+            nn.init.constant_(m.bias, 0)
 
     def forward(self, x, hidden, w=None):
         x = x.view(-1, x.size(1))
@@ -64,9 +66,13 @@ class LSTMCell(nn.Module):
         self.reset_parameters()
 
     def reset_parameters(self):
-        std = 1.0 / math.sqrt(self.hidden_size)
-        for w in self.parameters():
-            w.data.uniform_(-std, std)
+        #std = 1.0 / math.sqrt(self.hidden_size)
+        for m in self.modules():
+            #w.data.uniform_(-std, std)
+            if isinstance(m, nn.Linear):
+                nn.init.kaiming_normal_(m.weight,
+                                nonlinearity='relu')  # Change nonlinearity to 'leaky_relu' if you switch
+                nn.init.constant_(m.bias, 0)
 
     def forward(self, x, hidden):
         hx, cx = hidden
