@@ -42,17 +42,8 @@ class FullQDisentangledVAE(nn.Module):
 
         self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim, 1,
                               bidirectional=True, batch_first=True)
-        for name, param in self.z_lstm.named_parameters():
-            if 'bias' in name:
-                nn.init.constant_(param, 0)
-            elif 'weight' in name:
-                nn.init.kaiming_normal_(param, nonlinearity='relu')
         self.z_rnn = nn.RNN(self.hidden_dim * 2, self.hidden_dim, batch_first=True)
-        for name, param in self.z_lstm.named_parameters():
-            if 'bias' in name:
-                nn.init.constant_(param, 0)
-            elif 'weight' in name:
-                nn.init.kaiming_normal_(param, nonlinearity='relu')
+
         self.z_post_fwd = nn.Linear(self.hidden_dim, self.hidden_dim)
         self.z_post_out = nn.Linear(self.hidden_dim, self.z_dim*2)
 
@@ -94,14 +85,20 @@ class FullQDisentangledVAE(nn.Module):
             if isinstance(m, nn.BatchNorm2d) or isinstance(m, nn.BatchNorm1d):
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 1)
-            elif isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d):
+            elif isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d) or isinstance(m, nn.Linear):
                 nn.init.kaiming_normal_(m.weight,
                                         nonlinearity='relu')  # Change nonlinearity to 'leaky_relu' if you switch
-            elif isinstance(m, nn.Linear):
-                nn.init.kaiming_normal_(m.weight,
-                                        nonlinearity='relu')
-                nn.init.constant_(m.bias, 0)
         nn.init.xavier_normal_(self.deconv1.weight, nn.init.calculate_gain('tanh'))
+
+    def reparameterize(self, mean, logvar, random_sampling=True):
+        # Reparametrization occurs only if random sampling is set to true, otherwise mean is returned
+        if random_sampling is True:
+            eps = torch.randn_like(logvar)
+            std = torch.exp(0.5 * logvar)
+            z = mean + eps * std
+            return z
+        else:
+            return mean
 
     def encode_frames(self, x):
         x = x.view(-1, 3, 64, 64)  # Batchwise stack the 8 images for applying convolutions parallely
@@ -130,34 +127,18 @@ class FullQDisentangledVAE(nn.Module):
         lstm_out, _ = self.z_rnn(lstm_out)
         lstm_out = self.z_post_fwd(lstm_out)
 
-        post_z_list = []
-        prior_z_lost = []
         zt_obs_list = []
         batch_size = lstm_out.shape[0]
         seq_size = lstm_out.shape[1]
-        '''
-        zt_1_mean = self.z_mean(lstm_out[:,0])
-        zt_1_lar = self.z_logvar(lstm_out[:,0])
 
-        post_z_1 = Normal(zt_1_mean, F.softplus(zt_1_lar) + 1e-5)
-        post_z_list.append(post_z_1)
-        prior_z0 = torch.distributions.Normal(torch.zeros(self.z_dim).to(self.device),
-                                              torch.ones(self.z_dim).to(self.device))
-
-        prior_z_lost.append(prior_z0)
-        # decode z0 observation
-        zt_1_dec = post_z_1.rsample()
-
-        zt_obs_list.append(zt_1_dec)
-        
-        zt_1 = [prior_z0.rsample() for i in range(batch_size)]
-        zt_1 = torch.stack(zt_1, dim=0)
-        '''
         zt_1 = torch.zeros(batch_size, self.z_dim).to(device)
         z_state_hx = zt_1.new_zeros(batch_size, self.hidden_dim)
         z_state_cx = zt_1.new_zeros(batch_size, self.hidden_dim)
 
-        kl_loss = []
+        z_post_mean_list = []
+        z_post_lar_list = []
+        z_prior_mean_list = []
+        z_prior_lar_list = []
 
         for t in range(0, seq_size):
             # posterior over ct, q(ct|ot,ft)
@@ -165,12 +146,10 @@ class FullQDisentangledVAE(nn.Module):
             zt_post_mean = z_post_out[:,:self.z_dim]
             zt_post_lar =z_post_out[:,self.z_dim:]
 
-            z_post = Normal(zt_post_mean, F.softplus(zt_post_lar) + 1e-5 )
+            z_post_mean_list.append(zt_post_mean)
+            z_post_lar_list.append(zt_post_lar)
+            z_post_sample = self.reparameterize(zt_post_mean, zt_post_lar, self.training)
 
-            post_z_list.append(z_post) # keep > 0
-
-            #z_post_sample = z_post.rsample()
-            z_post_sample = z_post.sample()
             # p(xt|zt)
             zt_obs_list.append(z_post_sample)
 
@@ -183,59 +162,35 @@ class FullQDisentangledVAE(nn.Module):
             z_fwd_latent_mean = z_prior_fwd[:,:self.z_dim]
             z_fwd_latent_lar = z_prior_fwd[:,self.z_dim:]
 
-            # store the prior of ct_i
-            z_prior = Normal(z_fwd_latent_mean, F.softplus(z_fwd_latent_lar)+ 1e-5)
+            z_prior_mean_list.append(z_fwd_latent_mean)
+            z_prior_lar_list.append(z_fwd_latent_lar)
 
-            dynamic_prior_log_prob = z_prior.log_prob(z_post_sample)
-            dynamic_posterior_log_prob = z_post.log_prob(z_post_sample)
-
-            kl_loss.append((dynamic_posterior_log_prob-dynamic_prior_log_prob).sum(dim=1))
-
-            prior_z_lost.append(z_prior)
-            #zt_1 = z_prior.rsample()
-            zt_1 = z_prior.sample()
+            zt_1= self.reparameterize(z_fwd_latent_mean, z_fwd_latent_lar, self.training)
 
         zt_obs_list = torch.stack(zt_obs_list, dim=1)
-        kl_loss_bwd = torch.stack(kl_loss, dim=1).sum(dim=1)
+        z_post_mean_list = torch.stack(z_post_mean_list, dim=1)
+        z_post_lar_list = torch.stack(z_post_lar_list, dim=1)
+        z_prior_mean_list = torch.stack(z_prior_mean_list, dim=1)
+        z_prior_lar_list = torch.stack(z_prior_lar_list, dim=1)
 
-        return post_z_list, prior_z_lost, zt_obs_list, kl_loss_bwd.mean()
+        return z_post_mean_list, z_post_lar_list, z_prior_mean_list, z_prior_lar_list, zt_obs_list
 
     def forward(self, x):
         conv_x = self.encode_frames(x)
 
-        post_zt, prior_zt, z, kl = self.encode_z(conv_x)
+        post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z = self.encode_z(conv_x)
         recon_x = self.decode_frames(z)
-        return post_zt, prior_zt, z, recon_x, kl
+        return post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, recon_x
 
-def _kl_normal_normal(p, q):
-    var_ratio = (p.scale / q.scale).pow(2)
-    t1 = ((p.loc - q.loc) / q.scale).pow(2)
-    return 0.5 * (var_ratio + t1 - 1 - var_ratio.log())
-
-def loss_fn(original_seq, recon_seq, post_z, prior_z, kl_loss):
-    mse = []
-    for i in range(recon_seq.shape[0]):
-        mse.append(F.mse_loss(recon_seq[i], original_seq[i], reduction='sum'))
-    mse = torch.stack(mse)
-    # compute kl related to states, kl(q(ct|ot,ft)||p(ct|zt-1)) and kl(q(z0|f0)||N(0,1))
-    '''
-    kl_z_list = []
-    for t in range(len(post_z)):
-        if torch.isnan(post_z[t].mean).any().item() or torch.isnan(post_z[t].scale).any().item():
-            print('-------------------------* %d *' % (t))
-            print('ct posterior is nan')
-        if torch.isnan(prior_z[t].mean).any().item() or torch.isnan(prior_z[t].scale).any().item():
-            print('-------------------------* %d *' % (t))
-            print('ct prior is nan')
-        # kl divergences (sum over dimension)
-        kl_obs_state = _kl_normal_normal(prior_z[t], post_z[t]).sum(-1).mean()
-        kl_z_list.append(kl_obs_state)
-    kld_z = torch.stack(kl_z_list)
-    kl_loss = kld_z.sum()
-    '''
-    mse_loss = mse.mean()
-
-    return mse_loss + kl_loss, mse_loss.item(), kl_loss.item()
+def loss_fn(original_seq, recon_seq, z_post_mean, z_post_logvar, z_prior_mean, z_prior_logvar):
+    batch_size = original_seq.shape[0]
+    mse = F.mse_loss(recon_seq,original_seq,reduction='sum')
+    # compute kl related to states, kl(q(ct|ot,ft)||p(ct|zt-1))
+    z_post_var = torch.exp(z_post_logvar)
+    z_prior_var = torch.exp(z_prior_logvar)
+    kld_z = 0.5 * torch.sum(
+        z_prior_logvar - z_post_logvar + ((z_post_var + torch.pow(z_post_mean - z_prior_mean, 2)) / z_prior_var) - 1)
+    return (mse + kld_z) / batch_size,  kld_z / batch_size
 
 class Trainer(object):
     def __init__(self, model, device, train, test, trainloader, testloader, epochs, batch_size, learning_rate, nsamples,
@@ -309,11 +264,10 @@ class Trainer(object):
                 z_fwd_latent_mean = z_prior_fwd[:, :self.model.z_dim]
                 z_fwd_latent_lar = z_prior_fwd[:, self.model.z_dim:]
 
-                #zt = Normal(z_fwd_latent_mean, F.softplus(z_fwd_latent_lar) + 1e-5).rsample()
-                zt = Normal(z_fwd_latent_mean, F.softplus(z_fwd_latent_lar) + 1e-5).sample()
-
+                zt = self.model.reparameterize(z_fwd_latent_mean, z_fwd_latent_lar, False)
                 zt_dec.append(zt)
                 zt_1 = zt
+
             zt_dec = torch.stack(zt_dec, dim=1)
             recon_x = self.model.decode_frames(zt_dec)
             recon_x = recon_x.view(16, 3, 64, 64)
@@ -321,34 +275,42 @@ class Trainer(object):
 
     def recon_frame(self, epoch, original):
         with torch.no_grad():
-            _, _, _, recon, _ = self.model(original)
+            _, _, _, _,_, recon = self.model(original)
             image = torch.cat((original, recon), dim=0)
             print(image.shape)
             image = image.view(16, 3, 64, 64)
             torchvision.utils.save_image(image, '%s/epoch%d.png' % (self.recon_path, epoch))
 
     def train_model(self):
+
+        self.model.eval()
+        self.sample_frames(0 + 1)
+        sample = self.test[int(torch.randint(0, len(self.test), (1,)).item())]
+        sample = torch.unsqueeze(sample, 0)
+        sample = sample.to(self.device)
+        self.recon_frame(0 + 1, sample)
+
         self.model.train()
 
         for epoch in range(self.start_epoch, self.epochs):
             losses = []
+            kl_loss = []
             write_log("Running Epoch : {}".format(epoch + 1), self.log_path)
             for i, data in enumerate(self.trainloader, 1):
                 data = data.to(device)
                 self.optimizer.zero_grad()
-                post_z, prior_z, z, recon_x, kl_loss = self.model(data)
-                loss, mse, kl = loss_fn(data, recon_x, post_z, prior_z, kl_loss)
+                post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, recon_x = self.model(data)
+                loss, kl = loss_fn(data, recon_x, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar)
                 loss.backward()
                 if self.grad_clip > 0.0:
                     nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
                 self.optimizer.step()
                 losses.append(loss.item())
-                loss_info = 'mse loss is %f, kl loss is %f' % (mse, kl)
-                print('mse loss is %f, kl loss is %f' % (mse, kl))
-                write_log(loss_info, self.log_path)
+                kl_loss.append(kl.item())
             meanloss = np.mean(losses)
-            self.epoch_losses.append(meanloss)
-            write_log("Epoch {} : Average Loss: {}".format(epoch + 1, meanloss), self.log_path)
+            klloss = np.mean(kl_loss)
+            self.epoch_losses.append(meanloss,klloss)
+            write_log("Epoch {} : Average Loss: {}, kl loss: {}".format(epoch + 1, meanloss, klloss), self.log_path)
             #self.save_checkpoint(epoch)
             self.model.eval()
             self.sample_frames(epoch + 1)
