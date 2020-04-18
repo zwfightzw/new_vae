@@ -258,8 +258,8 @@ class Trainer(object):
                 #z_state_hx, z_state_cx = self.model.z_to_z_fwd(zt_1, (z_state_hx, z_state_cx))
                 z_state_hx = self.model.z_to_z_fwd(zt_1, z_state_hx)
 
-                z_prior_fwd = self.model.z_prior_fwd(z_state_hx)
-                z_prior_fwd = self.model.z_prior_out(z_prior_fwd)
+                #z_prior_fwd = self.model.z_prior_fwd(z_state_hx)
+                z_prior_fwd = self.model.z_prior_out(z_state_hx)
 
                 z_fwd_latent_mean = z_prior_fwd[:, :self.model.z_dim]
                 z_fwd_latent_lar = z_prior_fwd[:, self.model.z_dim:]
