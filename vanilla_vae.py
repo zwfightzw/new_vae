@@ -32,20 +32,31 @@ class Sprites(torch.utils.data.Dataset):
 
 
 class FullQDisentangledVAE(nn.Module):
-    def __init__(self, frames, z_dim, conv_dim, hidden_dim, device):
+    def __init__(self, frames,f_dim, z_dim, conv_dim, hidden_dim, device,factorised=True):
         super(FullQDisentangledVAE, self).__init__()
+        self.f_dim = f_dim
         self.z_dim = z_dim
         self.frames = frames
         self.conv_dim = conv_dim
         self.hidden_dim = hidden_dim
         self.device = device
+        self.factorised = factorised
 
-        self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim, 1,
+        self.f_lstm = nn.LSTM(self.conv_dim, self.hidden_dim, 1,
                               bidirectional=True, batch_first=True)
-        self.z_rnn = nn.RNN(self.hidden_dim * 2, self.hidden_dim, batch_first=True)
+        # TODO: Check if only one affine transform is sufficient. Paper says distribution is parameterised by LSTM
+        self.f_out = nn.Linear(self.hidden_dim * 2, self.f_dim*2, False)
 
-        #self.z_post_fwd = nn.Linear(self.hidden_dim, self.hidden_dim)
-        self.z_post_out = nn.Linear(self.hidden_dim, self.z_dim*2)
+        if self.factorised is True:
+            # Paper says : 1 Hidden Layer MLP. Last layers shouldn't have any nonlinearities
+            self.z_inter = nn.Linear(self.conv_dim, self.hidden_dim)
+            self.z_post_out = nn.Linear(self.hidden_dim, self.z_dim*2)
+        else:
+            self.z_lstm = nn.LSTM(self.conv_dim + self.f_dim, self.hidden_dim, 1,
+                          bidirectional=True, batch_first=True)
+            self.z_rnn = nn.RNN(self.hidden_dim * 2, self.hidden_dim, batch_first=True)
+            #self.z_post_fwd = nn.Linear(self.hidden_dim, self.hidden_dim)
+            self.z_post_out = nn.Linear(self.hidden_dim, self.z_dim*2)
 
         #self.z_prior_fwd = nn.Linear(self.hidden_dim, self.hidden_dim)
         self.z_prior_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
@@ -56,29 +67,29 @@ class FullQDisentangledVAE(nn.Module):
         self.conv1 = nn.Conv2d(3, 256, kernel_size=4, stride=2, padding=1)
         self.conv2 = nn.Conv2d(256, 256, kernel_size=4, stride=2, padding=1)
         self.bn2 = nn.BatchNorm2d(256)
-        self.drop2 = nn.Dropout2d(0.4)
+        self.drop2 = nn.Identity() #nn.Dropout2d(0.4)
         self.conv3 = nn.Conv2d(256, 256, kernel_size=4, stride=2, padding=1)
         self.bn3 = nn.BatchNorm2d(256)
-        self.drop3 = nn.Dropout2d(0.4)
+        self.drop3 = nn.Identity() #nn.nn.Dropout2d(0.4)
         self.conv4 = nn.Conv2d(256, 256, kernel_size=4, stride=2, padding=1)
         self.bn4 = nn.BatchNorm2d(256)
-        self.drop4 = nn.Dropout2d(0.4)
+        self.drop4 = nn.Identity() #nn.nn.Dropout2d(0.4)
         self.conv_fc = nn.Linear(4 * 4 * 256, self.conv_dim)  # 4*4 is size 256 is channels
-        self.drop_fc = nn.Dropout(0.4)
+        self.drop_fc = nn.Identity() #nn.nn.Dropout(0.4)
         self.bnf = nn.BatchNorm1d(self.conv_dim)
 
-        self.deconv_fc = nn.Linear(self.z_dim, 4 * 4 * 256)  # 4*4 is size 256 is channels
+        self.deconv_fc = nn.Linear(self.z_dim + self.f_dim, 4 * 4 * 256)  # 4*4 is size 256 is channels
         self.deconv_bnf = nn.BatchNorm1d(4 * 4 * 256)
-        self.drop_fc_deconv = nn.Dropout(0.4)
+        self.drop_fc_deconv = nn.Identity() #nn.nn.Dropout(0.4)
         self.deconv4 = nn.ConvTranspose2d(256, 256, kernel_size=4, stride=2, padding=1)
         self.dbn4 = nn.BatchNorm2d(256)
-        self.drop4_deconv = nn.Dropout2d(0.4)
+        self.drop4_deconv = nn.Identity() #nn.nn.Dropout2d(0.4)
         self.deconv3 = nn.ConvTranspose2d(256, 256, kernel_size=4, stride=2, padding=1)
         self.dbn3 = nn.BatchNorm2d(256)
-        self.drop3_deconv = nn.Dropout2d(0.4)
+        self.drop3_deconv = nn.Identity() #nn.nn.Dropout2d(0.4)
         self.deconv2 = nn.ConvTranspose2d(256, 256, kernel_size=4, stride=2, padding=1)
         self.dbn2 = nn.BatchNorm2d(256)
-        self.drop2_deconv = nn.Dropout2d(0.4)
+        self.drop2_deconv = nn.Identity() #nn.nn.Dropout2d(0.4)
         self.deconv1 = nn.ConvTranspose2d(256, 3, kernel_size=4, stride=2, padding=1)
 
         for m in self.modules():
@@ -112,7 +123,7 @@ class FullQDisentangledVAE(nn.Module):
         return x
 
     def decode_frames(self, zf):
-        x = zf.view(-1, self.z_dim)  # For batchnorm1D to work, the frames should be stacked batchwise
+        x = zf.view(-1, self.z_dim + self.f_dim)  # For batchnorm1D to work, the frames should be stacked batchwise
         x = self.drop_fc_deconv(F.leaky_relu(self.deconv_bnf(self.deconv_fc(x)), 0.1))
         x = x.view(-1, 256, 4, 4)  # The 8 frames are stacked batchwise
         x = self.drop4_deconv(F.leaky_relu(self.dbn4(self.deconv4(x)), 0.1))
@@ -122,10 +133,15 @@ class FullQDisentangledVAE(nn.Module):
             x))  # Images are normalized to -1,1 range hence use tanh. Remove batchnorm because it should fit the final distribution
         return x.view(-1, self.frames, 3, 64, 64)  # Convert the stacked batches back into frames. Images are 64*64*3
 
-    def encode_z(self, x):
-        lstm_out, _ = self.z_lstm(x)
-        lstm_out, _ = self.z_rnn(lstm_out)
-        #lstm_out = self.z_post_fwd(lstm_out)
+    def encode_z(self, x, f):
+
+        if self.factorised is True:
+            lstm_out = self.z_inter(x)
+        else:
+            # The expansion is done to match the dimension of x and f, used for concatenating f to each x_t
+            f_expand = f.unsqueeze(1).expand(-1, self.frames, self.f_dim)
+            lstm_out, _ = self.z_lstm(torch.cat((x, f_expand), dim=2))
+            lstm_out, _ = self.z_rnn(lstm_out)
 
         zt_obs_list = []
         batch_size = lstm_out.shape[0]
@@ -175,22 +191,37 @@ class FullQDisentangledVAE(nn.Module):
 
         return z_post_mean_list, z_post_lar_list, z_prior_mean_list, z_prior_lar_list, zt_obs_list
 
+    def encode_f(self, x):
+        lstm_out, _ = self.f_lstm(x)
+        # The features of the last timestep of the forward RNN is stored at the end of lstm_out in the first half, and the features
+        # of the "first timestep" of the backward RNN is stored at the beginning of lstm_out in the second half
+        # For a detailed explanation, check: https://gist.github.com/ceshine/bed2dadca48fe4fe4b4600ccce2fd6e1
+        backward = lstm_out[:, 0, self.hidden_dim:2 * self.hidden_dim]
+        frontal = lstm_out[:, self.frames - 1, 0:self.hidden_dim]
+        lstm_out = torch.cat((frontal, backward), dim=1)
+        mean = self.f_out(lstm_out)[:,:self.f_dim]
+        logvar = self.f_out(lstm_out)[:,self.f_dim:]
+        return mean, logvar, self.reparameterize(mean, logvar, self.training)
+
     def forward(self, x):
         conv_x = self.encode_frames(x)
+        f_mean, f_logvar, f = self.encode_f(conv_x)
+        post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z = self.encode_z(conv_x, f)
+        f_expand = f.unsqueeze(1).expand(-1, self.frames, self.f_dim)
+        zf = torch.cat((z, f_expand), dim=2)
+        recon_x = self.decode_frames(zf)
+        return f_mean, f_logvar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, recon_x
 
-        post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z = self.encode_z(conv_x)
-        recon_x = self.decode_frames(z)
-        return post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, recon_x
-
-def loss_fn(original_seq, recon_seq, z_post_mean, z_post_logvar, z_prior_mean, z_prior_logvar):
+def loss_fn(original_seq, recon_seq, f_mean, f_logvar, z_post_mean, z_post_logvar, z_prior_mean, z_prior_logvar):
     batch_size = original_seq.shape[0]
     mse = F.mse_loss(recon_seq,original_seq,reduction='sum')
     # compute kl related to states, kl(q(ct|ot,ft)||p(ct|zt-1))
+    kld_f = -0.5 * torch.sum(1 + f_logvar - torch.pow(f_mean, 2) - torch.exp(f_logvar))
     z_post_var = torch.exp(z_post_logvar)
     z_prior_var = torch.exp(z_prior_logvar)
     kld_z = 0.5 * torch.sum(
         z_prior_logvar - z_post_logvar + ((z_post_var + torch.pow(z_post_mean - z_prior_mean, 2)) / z_prior_var) - 1)
-    return (mse + kld_z) / batch_size,  kld_z / batch_size
+    return (mse + kld_z + kld_f) / batch_size,  (kld_z+ kld_f) / batch_size
 
 class Trainer(object):
     def __init__(self, model, device, train, test, trainloader, testloader, epochs, batch_size, learning_rate, nsamples,
@@ -239,6 +270,8 @@ class Trainer(object):
     def sample_frames(self, epoch):
         with torch.no_grad():
 
+            test_f = torch.rand(1, 256, device=self.device)
+            test_f = test_f.unsqueeze(1).expand(2, 8, 256)
             zt_dec = []
             '''
             prior_z0 = torch.distributions.Normal(torch.zeros(self.model.z_dim).to(self.device),
@@ -248,7 +281,7 @@ class Trainer(object):
             zt_1 = torch.stack(zt_1, dim=0)
             zt_dec.append(zt_1)
             '''
-            zt_1 = torch.zeros(self.samples, self.model.z_dim).to(device)
+            zt_1 = torch.zeros(self.samples, self.model.z_dim).to(self.device)
             z_state_hx = zt_1.new_zeros(self.samples, self.model.hidden_dim)
             z_state_cx = zt_1.new_zeros(self.samples, self.model.hidden_dim)
 
@@ -269,13 +302,14 @@ class Trainer(object):
                 zt_1 = zt
 
             zt_dec = torch.stack(zt_dec, dim=1)
-            recon_x = self.model.decode_frames(zt_dec)
+            test_zf = torch.cat((zt_dec, test_f), dim=2)
+            recon_x = self.model.decode_frames(test_zf)
             recon_x = recon_x.view(16, 3, 64, 64)
             torchvision.utils.save_image(recon_x, '%s/epoch%d.png' % (self.sample_path, epoch))
 
     def recon_frame(self, epoch, original):
         with torch.no_grad():
-            _, _, _, _,_, recon = self.model(original)
+            _, _, _, _, _, _,_, recon = self.model(original)
             image = torch.cat((original, recon), dim=0)
             print(image.shape)
             image = image.view(16, 3, 64, 64)
@@ -284,6 +318,13 @@ class Trainer(object):
     def train_model(self):
         self.model.train()
 
+        self.model.eval()
+        self.sample_frames(0 + 1)
+        sample = self.test[int(torch.randint(0, len(self.test), (1,)).item())]
+        sample = torch.unsqueeze(sample, 0)
+        sample = sample.to(self.device)
+        self.recon_frame(0 + 1, sample)
+
         for epoch in range(self.start_epoch, self.epochs):
             losses = []
             kl_loss = []
@@ -291,8 +332,8 @@ class Trainer(object):
             for i, data in enumerate(self.trainloader, 1):
                 data = data.to(device)
                 self.optimizer.zero_grad()
-                post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, recon_x = self.model(data)
-                loss, kl = loss_fn(data, recon_x, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar)
+                f_mean, f_logvar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, recon_x = self.model(data)
+                loss, kl = loss_fn(data, recon_x, f_mean, f_logvar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar)
                 loss.backward()
                 if self.grad_clip > 0.0:
                     nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
@@ -325,12 +366,15 @@ if __name__ == '__main__':
     parser.add_argument('--dset_name', type=str, default='moving_mnist')
     # state size
     parser.add_argument('--z-dim', type=int, default=36)
+    parser.add_argument('--f-dim', type=int, default=256)
     parser.add_argument('--hidden-dim', type=int, default=384)
     parser.add_argument('--conv-dim', type=int, default=1024)
     # data size
     parser.add_argument('--batch-size', type=int, default=64)
     parser.add_argument('--frame-size', type=int, default=8)
     parser.add_argument('--nsamples', type=int, default=2)
+
+    parser.add_argument('--factorised', default=True, type=bool)
 
     # optimization
     parser.add_argument('--learn-rate', type=float, default=0.0002)
@@ -344,7 +388,7 @@ if __name__ == '__main__':
     torch.cuda.manual_seed(FLAGS.seed)
     device = torch.device('cuda:%d'%(FLAGS.gpu_id) if torch.cuda.is_available() else 'cpu')
 
-    vae = FullQDisentangledVAE(frames=FLAGS.frame_size, z_dim=FLAGS.z_dim, hidden_dim=FLAGS.hidden_dim, conv_dim=FLAGS.conv_dim, device=device)
+    vae = FullQDisentangledVAE(frames=FLAGS.frame_size, f_dim=FLAGS.f_dim,z_dim=FLAGS.z_dim, hidden_dim=FLAGS.hidden_dim, conv_dim=FLAGS.conv_dim, device=device, factorised=FLAGS.factorised)
     print(vae)
     sprites_train = Sprites('./dataset/lpc-dataset/train/', 6687)
     sprites_test = Sprites('./dataset/lpc-dataset/test/', 873)
