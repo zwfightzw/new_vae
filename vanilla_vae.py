@@ -317,14 +317,6 @@ class Trainer(object):
 
     def train_model(self):
         self.model.train()
-
-        self.model.eval()
-        self.sample_frames(0 + 1)
-        sample = self.test[int(torch.randint(0, len(self.test), (1,)).item())]
-        sample = torch.unsqueeze(sample, 0)
-        sample = sample.to(self.device)
-        self.recon_frame(0 + 1, sample)
-
         for epoch in range(self.start_epoch, self.epochs):
             losses = []
             kl_loss = []
